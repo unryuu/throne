@@ -1194,8 +1194,8 @@ function applyDecision(
   if (actorId === ids.lvFang && mode !== "converse") {
     if (decision.report?.trim())
       ctx.commit("court.oral_report", { text: decision.report.trim() });
-    if (decision.interrupt)
-      requestInterruption(ctx, actorId, decision.interrupt.reason);
+    if (decision.interrupt?.reason.trim())
+      requestInterruption(ctx, actorId, decision.interrupt.reason.trim());
   }
   if (actorId === ids.luBing)
     for (const route of decision.routes) {

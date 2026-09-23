@@ -4,7 +4,11 @@ import { replay } from "@throne/sim-core";
 import { at, days, roll } from "./calendar.ts";
 import { createInitialState, ids } from "./jiajing.ts";
 import { reduceCourtState, type RescriptSubmission } from "./model.ts";
-import type { CourtModel, CourtModelRequest } from "./npc.ts";
+import {
+  parseCourtDecision,
+  type CourtModel,
+  type CourtModelRequest,
+} from "./npc.ts";
 import { startCourtSession, type CourtSession } from "./session.ts";
 import type { CourtState } from "./types.ts";
 
@@ -789,6 +793,21 @@ describe("court session", () => {
         reduceCourtState,
       ),
     ).toEqual(state);
+  });
+
+  it("accepts the reply template's optional extras left null or empty", () => {
+    const decision = parseCourtDecision(
+      JSON.stringify({
+        inner: "无事。",
+        report: null,
+        interrupt: { reason: "" },
+        dispositions: [{ documentId: "doc-1", action: "present", text: null }],
+        routes: [
+          { reportId: "doc-2", channel: "direct", note: null, interrupt: null },
+        ],
+      }),
+    );
+    expect(decision.interrupt?.reason).toBe("");
   });
 
   it("does not let Lu Bing sit on a field report", async () => {

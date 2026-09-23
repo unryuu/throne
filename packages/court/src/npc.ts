@@ -56,14 +56,15 @@ export const courtDecisionSchema = z.object({
       }),
     )
     .default([]),
-  report: z.string().max(1500).optional(),
-  reply: z.string().max(1500).optional(),
+  // Models fill every field of the reply template, so optional extras may come back null or empty.
+  report: z.string().max(1500).nullish(),
+  reply: z.string().max(1500).nullish(),
   dispositions: z
     .array(
       z.object({
         documentId: z.string(),
         action: z.string(),
-        text: z.string().max(600).optional(),
+        text: z.string().max(600).nullish(),
       }),
     )
     .default([]),
@@ -72,12 +73,12 @@ export const courtDecisionSchema = z.object({
       z.object({
         reportId: z.string(),
         channel: z.string(),
-        note: z.string().max(400).optional(),
-        interrupt: z.boolean().optional(),
+        note: z.string().max(400).nullish(),
+        interrupt: z.boolean().nullish(),
       }),
     )
     .default([]),
-  interrupt: z.object({ reason: z.string().min(1).max(300) }).optional(),
+  interrupt: z.object({ reason: z.string().max(300) }).nullish(),
 });
 export type CourtDecision = z.infer<typeof courtDecisionSchema>;
 
