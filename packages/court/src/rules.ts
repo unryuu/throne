@@ -56,7 +56,7 @@ export const capabilitySpecs: Readonly<Record<string, CapabilitySpec>> = {
   repair_dike: {
     id: "repair_dike",
     description:
-      "征发民夫加固某县大堤，耗粮半万石，约十日完工。汛期前完工才有用。",
+      "征发民夫加固某县大堤，耗粮半万石，约十日完工。汛期前完工才有用，也会补好先前被人动过手脚的地方。",
     parameters: '{"countyId":"chunan|jiande|tonglu"}',
     delayDays: 10,
   },

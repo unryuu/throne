@@ -523,6 +523,7 @@ function resolveAction(ctx: Context, actionId: string): void {
           0.95,
           Math.round((county.dikeIntegrity + 0.15) * 100) / 100,
         ),
+        dikeSabotaged: false,
       });
       return finish("succeeded", { note: "大堤加固完工" });
     }

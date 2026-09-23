@@ -311,6 +311,44 @@ describe("court session", () => {
     );
   });
 
+  it("lets a repair finished before the flood undo sabotage but keeps the evidence", async () => {
+    const scripts = {
+      ...defaultScripts,
+      [ids.zheng]: ((_input, count) =>
+        count === 1
+          ? {
+              inner: "先掘后补。",
+              actions: [
+                {
+                  capabilityId: "breach_dike",
+                  parameters: { countyId: "jiande" },
+                },
+              ],
+            }
+          : count === 2
+            ? {
+                inner: "还是补上罢。",
+                actions: [
+                  {
+                    capabilityId: "repair_dike",
+                    parameters: { countyId: "jiande" },
+                  },
+                ],
+              }
+            : { inner: "静观。" }) as Script,
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    await play(session, followAll);
+    const state = session.state;
+    expect(state.counties.jiande.dikeSabotaged).toBe(false);
+    expect(state.counties.jiande.breach).not.toBe("sabotage");
+    expect(state.evidence).toHaveLength(1);
+  });
+
   it("tells an author when a memorial is held, and arrest hands the province to Hu", async () => {
     const { model } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
