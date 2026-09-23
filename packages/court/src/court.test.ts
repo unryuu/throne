@@ -778,8 +778,10 @@ describe("court session", () => {
       ),
     ).toBe(true);
     const reportDoc = state.documents[report.id]!;
-    for (const d of state.decisions.filter((d) => d.actorId === ids.lvFang))
+    for (const d of state.decisions.filter((d) => d.actorId === ids.lvFang)) {
       expect(JSON.stringify(d.input)).not.toContain(reportDoc.text);
+      expect(JSON.stringify(d.input)).not.toContain("着即查勘");
+    }
     expect(
       state.decisions.some(
         (d) =>

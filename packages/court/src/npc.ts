@@ -375,9 +375,16 @@ export function buildNpcInput(
             ),
           })),
           dispositionOptions: directorateActions,
-          // The Directorate writes out every vermilion rescript, so it knows what has been issued.
+          // The Directorate writes out vermilion rescripts, but Guard dispatches go straight to Lu Bing.
           edictsIssued: Object.values(state.documents)
-            .filter((d) => d.kind === "edict")
+            .filter(
+              (d) =>
+                d.kind === "edict" &&
+                !(
+                  d.edict?.kind === "order_inquiry" &&
+                  d.edict.params.agent === "jinyiwei"
+                ),
+            )
             .slice(-15)
             .map((d) => ({
               at: formatCourtTime(d.sentAt, language),
