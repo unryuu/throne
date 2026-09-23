@@ -1,7 +1,12 @@
 export class DeterministicIdFactory {
-  #counter = 0;
+  #counter: number;
 
-  constructor(readonly prefix: string) {}
+  constructor(
+    readonly prefix: string,
+    start = 0,
+  ) {
+    this.#counter = start;
+  }
 
   next(kind: "domain" | "scheduled"): string {
     const id = `${this.prefix}:${kind}:${this.#counter.toString().padStart(8, "0")}`;

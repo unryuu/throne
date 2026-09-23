@@ -56,6 +56,9 @@ importers:
       '@throne/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
+      '@throne/court':
+        specifier: workspace:*
+        version: link:../../packages/court
       '@throne/localization':
         specifier: workspace:*
         version: link:../../packages/localization
@@ -93,6 +96,18 @@ importers:
       '@throne/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+
+  packages/court:
+    dependencies:
+      '@throne/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@throne/sim-core':
+        specifier: workspace:*
+        version: link:../sim-core
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/localization: {}
 

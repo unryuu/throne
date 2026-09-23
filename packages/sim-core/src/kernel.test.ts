@@ -84,3 +84,49 @@ describe("SimulationKernel", () => {
     expect(kernel.state).toEqual(initialState);
   });
 });
+
+describe("SimulationKernel.restore", () => {
+  it("continues a partly run history with the same ids and results", async () => {
+    const full = new SimulationKernel(
+      initialState,
+      model,
+      new InMemoryEventStore(),
+      "restore-run",
+    );
+    const partialStore = new InMemoryEventStore();
+    const partial = new SimulationKernel(
+      initialState,
+      model,
+      partialStore,
+      "restore-run",
+    );
+    for (const kernel of [full, partial]) {
+      await kernel.schedule({
+        eventType: "increase",
+        scheduledAt: simTime(5),
+        payload: { amount: 1 },
+      });
+      await kernel.schedule({
+        eventType: "increase",
+        scheduledAt: simTime(9),
+        payload: { amount: 4 },
+      });
+    }
+    await full.runUntilIdle();
+    await partial.step();
+
+    const copy = new InMemoryEventStore();
+    await copy.append(await partialStore.readAll());
+    const restored = await SimulationKernel.restore(
+      initialState,
+      model,
+      copy,
+      "restore-run",
+    );
+    expect(restored.time).toBe(5);
+    expect(restored.pendingEventCount).toBe(1);
+    await restored.runUntilIdle();
+    expect(restored.state).toEqual(full.state);
+    expect(await copy.readAll()).toEqual(await full.store.readAll());
+  });
+});

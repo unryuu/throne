@@ -54,7 +54,7 @@ export type ScheduleInput = Omit<ScheduledEventDraft, "scheduledAt"> & {
 
 export class SimulationKernel<State> {
   readonly #queue: ScheduledEvent[] = [];
-  readonly #ids: DeterministicIdFactory;
+  #ids: DeterministicIdFactory;
   #state: State;
   #time = simTime(0);
 
@@ -66,6 +66,37 @@ export class SimulationKernel<State> {
   ) {
     this.#state = structuredClone(initialState) as State;
     this.#ids = new DeterministicIdFactory(runId);
+  }
+
+  /** Rebuilds state, clock and pending queue from records already in `store`. */
+  static async restore<State>(
+    initialState: State,
+    model: DomainModel<State>,
+    store: EventStore,
+    runId: string,
+  ): Promise<SimulationKernel<State>> {
+    const records = await store.readAll();
+    const kernel = new SimulationKernel(initialState, model, store, runId);
+    const consumed = new Set<string>();
+    const scheduled: ScheduledEvent[] = [];
+    let time = 0;
+    for (const record of records) {
+      if (record.kind === "scheduled") scheduled.push(record.event);
+      else if (record.kind === "consumed") {
+        consumed.add(record.eventId);
+        time = Math.max(time, record.consumedAt);
+      } else {
+        kernel.#state = model.reduce(kernel.#state, record.event);
+        time = Math.max(time, record.event.occurredAt);
+      }
+    }
+    kernel.#queue.push(...scheduled.filter((e) => !consumed.has(e.id)));
+    kernel.#time = simTime(time);
+    kernel.#ids = new DeterministicIdFactory(
+      runId,
+      records.filter((r) => r.kind !== "consumed").length,
+    );
+    return kernel;
   }
 
   get time(): SimTime {

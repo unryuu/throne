@@ -25,7 +25,8 @@
         "./packages/agent-runtime/src/policy.ts"
       ],
       "@throne/localization": ["./packages/localization/src/index.ts"],
-      "@throne/scenario-mvp": ["./packages/scenario-mvp/src/index.ts"]
+      "@throne/scenario-mvp": ["./packages/scenario-mvp/src/index.ts"],
+      "@throne/court": ["./packages/court/src/index.ts"]
     }
   },
   "include": [

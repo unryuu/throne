@@ -87,6 +87,15 @@ export class DeepSeekHarnessDecisionPolicy
     return decision;
   }
 
+  /** Runs one free-form prompt; callers own parsing and validation. */
+  async complete(
+    prompt: string,
+    sessionId: string,
+  ): Promise<{ finalResponse: string; events: readonly unknown[] }> {
+    const result = await this.#harness.run(prompt, { sessionId });
+    return { finalResponse: result.finalResponse, events: result.events };
+  }
+
   close(): Promise<void> {
     return this.#harness.close();
   }
