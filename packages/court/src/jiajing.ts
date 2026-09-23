@@ -1,5 +1,5 @@
 import type { JsonObject } from "@throne/shared-types";
-import { at, days } from "./calendar.ts";
+import { at, CHEN, days, SI, WU } from "./calendar.ts";
 import type {
   CountyId,
   CourtActor,
@@ -19,13 +19,16 @@ export const ids = {
   lvFang: "actor:lv-fang",
   shen: "actor:shen-yishi",
   jinyiwei: "actor:jinyiwei",
+  luBing: "actor:lu-bing",
   policyMemorial: "doc-policy",
   armyMemorial: "doc-army-pay",
 } as const;
 
 export const countyIds: readonly CountyId[] = ["chunan", "jiande", "tonglu"];
 export const policyTargetMu = 50;
-export const decisionBudget = 160;
+export const decisionBudget = 240;
+export const conversationRounds = 3;
+export const maxSeclusionDays = 30;
 
 export const governorCapabilities = [
   "buy_land",
@@ -57,6 +60,7 @@ function actor(
   capabilities: readonly string[],
   documentKinds: readonly DocumentKind[],
   profile: JsonObject = {},
+  cadence?: CourtActor["cadence"],
 ): CourtActor {
   return {
     id,
@@ -68,6 +72,7 @@ function actor(
     capabilities,
     documentKinds,
     profile,
+    ...(cadence ? { cadence } : {}),
   };
 }
 
@@ -184,9 +189,55 @@ const actors: Record<string, CourtActor> = {
     "吕芳",
     "司礼监掌印太监",
     "beijing",
-    false,
+    true,
     [],
+    ["letter"],
+    {
+      background:
+        "司礼监掌印太监，跟随皇上几十年，宫里人称老祖宗。皇上深居西苑修玄，外朝奏疏经内阁票拟后、织造局密奏、各处本章，都先到你手里，由你决定怎么递到御前。",
+      situation:
+        "国库空虚，宫里修玄、织造局今年的丝绸都等着浙江改稻为桑。外朝严党与清流相争，内廷与外朝也各有盘算。",
+      motivations: [
+        "忠于皇上，替主子分忧挡事，不让烦心事扰了修玄",
+        "护着宫里的人，尤其是干儿子杨金水",
+        "不让外朝借浙江的事把火烧进宫里",
+        "保住自己在皇上跟前的分量",
+      ],
+      relationships: [
+        "杨金水：你的干儿子，掌苏杭织造局；他办砸了，你脱不了干系",
+        "严嵩：首辅，票拟都出自内阁；你能发回他的票拟，他也要看你的脸色",
+        "陆炳：锦衣卫掌事，皇上的乳兄弟，能不经你直接面圣",
+      ],
+      role: "你不写奏疏。每次你要处置收件箱里的本章，并给皇上口奏几句。你也能看到内阁压着没票拟的本章清单。",
+    },
+    { slot: SI, gapDays: 1 },
+  ),
+  [ids.luBing]: actor(
+    ids.luBing,
+    "陆炳",
+    "掌锦衣卫事",
+    "beijing",
+    true,
     [],
+    ["letter"],
+    {
+      background:
+        "掌锦衣卫事，母亲是皇上的乳母，自幼随侍，最得皇上信任。锦衣卫缇骑奉旨在外查案，查得的原报先交到你手里。",
+      situation: "皇上派锦衣卫查浙江的事，外朝严党、内廷司礼监都盯着查出什么。",
+      motivations: [
+        "忠于皇上，不负信任",
+        "与严家素有往来，不愿无故开罪",
+        "不愿与司礼监结怨，宫里的事总要吕芳照应",
+        "保全锦衣卫和自己",
+      ],
+      relationships: [
+        "嘉靖：乳兄弟，君臣之外另有一层情分",
+        "吕芳：司礼监掌印，交司礼监转呈是常规，绕开他直接面圣他会知道",
+        "严嵩、严世蕃：素有往来",
+      ],
+      role: "缇骑原报由你转呈御前。原报一字不能改，也不能压着不报；你只能附几句话，并决定交司礼监转呈还是直接面圣。",
+    },
+    { slot: CHEN, gapDays: 1 },
   ),
   [ids.shen]: actor(ids.shen, "沈一石", "商人", "hangzhou", false, [], []),
   [ids.jinyiwei]: actor(ids.jinyiwei, "锦衣卫", "", "beijing", false, [], []),
@@ -238,8 +289,9 @@ function opening(
     text,
     sentAt: time,
     arrivals: { [ids.ruler]: time },
-    deliveredTo: [ids.ruler, ids.yanSong],
+    deliveredTo: [ids.ruler, ids.yanSong, ids.lvFang],
     readyForRulerAt: time,
+    directorate: { receivedAt: time, action: "present", at: time },
     draft: { edict: { kind, params: {} }, text: draftText, draftedAt: time },
     scripted: true,
   };
@@ -307,7 +359,9 @@ export function createInitialState(
     phase: "running",
     seed,
     audienceCount: 0,
-    audienceScheduledAt: at(0, 6),
+    nextAudienceAt: at(0, WU),
+    standing: { mode: "personal", instruction: "" },
+    oralReports: [],
     actors,
     counties: {
       chunan: county("chunan", "淳安", 40, 0.75, 14),

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import type { Plugin } from "vite";
-import type { RescriptSubmission } from "@throne/court";
+import type { AudienceAction, RescriptSubmission } from "@throne/court";
 import { CourtService } from "./court-service.ts";
 import { LiveService } from "./live-service.ts";
 
@@ -49,6 +49,12 @@ export function livePlugin(root: string): Plugin {
               result = await court.submit(
                 id,
                 body.submission as RescriptSubmission,
+              );
+            else if (id && action === "act" && body.action)
+              result = await court.act(
+                id,
+                String(body.audienceId),
+                body.action as AudienceAction,
               );
             else if (id && action === "retry") result = await court.retry(id);
             else throw new Error("Invalid court request");

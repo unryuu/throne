@@ -14,6 +14,7 @@ const quietModel =
     };
     return JSON.stringify({
       inner: "心里另有盘算。",
+      reply: "奴婢在。",
       documents: [
         { kind: "letter", to: "actor:yan-song", subject: "私函", text: "密。" },
       ],
@@ -27,7 +28,7 @@ const quietModel =
 
 async function finish(service: CourtService, snapshot: CourtSnapshot) {
   let current = snapshot;
-  for (let i = 0; current.status === "waiting" && i < 40; i += 1) {
+  for (let i = 0; current.status === "waiting" && i < 120; i += 1) {
     const audience = current.view.audience!;
     current = await service.submit(current.id, {
       audienceId: audience.id,
@@ -49,6 +50,14 @@ describe("court service", () => {
     const start = await service.create("zh-CN");
     expect(start.status).toBe("waiting");
     const first = start.view.audience!;
+    const talked = await service.act(start.id, first.id, {
+      type: "converse",
+      message: "浙江的事怎么样了？",
+    });
+    expect(talked.view.audience!.conversation).toEqual([
+      { role: "ruler", text: "浙江的事怎么样了？" },
+      { role: "lv", text: "奴婢在。" },
+    ]);
     const after = await service.submit(start.id, {
       audienceId: first.id,
       items: first.documents.map((d) => ({

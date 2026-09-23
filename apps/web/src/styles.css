@@ -1661,6 +1661,79 @@ article p {
 .court-submit {
   margin-top: 12px;
 }
+.court-oral {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-left: 3px solid #7b6ba8;
+  background: #1a1a1f;
+  color: #cfc9b7;
+}
+.court-oral span,
+.court-talk h4,
+.court-standing h4,
+.court-seclusion span {
+  display: block;
+  margin: 0 0 6px;
+  color: #858274;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+}
+.court-oral p {
+  margin: 0;
+  line-height: 1.8;
+}
+.court-doc .court-oral {
+  margin: 14px 0 0;
+}
+.court-badge {
+  margin: 0 0 10px;
+  color: #5d8a86;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+.court-talk,
+.court-standing {
+  margin: 28px 0 8px;
+}
+.court-line {
+  margin: 0 0 8px;
+  line-height: 1.7;
+}
+.court-line strong {
+  margin-right: 8px;
+  color: #bd9a68;
+}
+.court-line-lv strong {
+  color: #9d8fc7;
+}
+.court-standing .view-switch {
+  width: fit-content;
+  margin-bottom: 10px;
+}
+.court-seclusion {
+  display: block;
+  margin: 24px 0 0;
+}
+.court-seclusion input {
+  width: 5em;
+  padding: 6px 8px;
+  border: 1px solid #3a3b31;
+  color: inherit;
+  background: #1d1e17;
+  font: inherit;
+}
+.court-interruption {
+  margin: 32px 0 16px;
+  padding: 14px 16px;
+  border-left: 3px solid #bd9a68;
+  background: #1d1e17;
+  line-height: 1.8;
+}
+.court-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .court-archive {
   margin-top: 40px;
 }

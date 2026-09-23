@@ -12,18 +12,25 @@ import type {
 } from "@throne/sim-core";
 import { CHEN, WU, days, nextShichen, roll } from "./calendar.ts";
 import {
+  conversationRounds,
   countyIds,
   governorCapabilities,
   ids,
+  maxSeclusionDays,
   travelDays,
   worldCheckInterval,
 } from "./jiajing.ts";
 import {
   buildNpcInput,
+  conversationSystemPrompt,
   decisionPrompt,
+  directorateHeld,
+  directorateInbox,
   episodeId,
   parseCourtDecision,
   pendingDrafts,
+  reportsAwaitingRoute,
+  routeChannels,
   systemPrompt,
   type CourtDecision,
   type CourtModel,
@@ -46,6 +53,7 @@ import type {
   CourtDecisionRecord,
   CourtDocument,
   CourtState,
+  DirectorateAction,
   Draft,
   Edict,
   Evidence,
@@ -65,7 +73,17 @@ export type RescriptSubmission = {
   readonly audienceId: string;
   readonly items: readonly RescriptItem[];
   readonly specials: readonly SpecialEdict[];
+  readonly standing?: CourtState["standing"];
+  /** Days until the next decision point; above one is a seclusion. */
+  readonly seclusionDays?: number;
+  /** Refuse an interruption of a seclusion without opening the desk. */
+  readonly decline?: boolean;
 };
+/** Things the emperor does inside an open decision point before closing it. */
+export type AudienceAction =
+  | { readonly type: "converse"; readonly message: string }
+  | { readonly type: "reveal"; readonly documentId: string }
+  | { readonly type: "admit" };
 
 type Options = {
   readonly runId: string;
@@ -132,9 +150,10 @@ function wake(ctx: Context, actorId: string): void {
     ctx.commit("npc.wake_capped", { actorId }, actorId);
     return;
   }
-  let at: number = nextShichen(ctx.time, CHEN);
+  const cadence = actor.cadence ?? { slot: CHEN, gapDays: 2 };
+  let at: number = nextShichen(ctx.time, cadence.slot);
   if (actor.active && actor.lastDecisionAt !== undefined)
-    at = Math.max(at, actor.lastDecisionAt + days(2));
+    at = Math.max(at, actor.lastDecisionAt + days(cadence.gapDays));
   if (at > ctx.state.endsAt) return;
   ctx.commit("npc.woken", { actorId, at }, actorId);
   ctx.later("npc.decide", at, { actorId });
@@ -144,15 +163,26 @@ function regularDecisionCount(state: CourtState): number {
   const pending = Object.values(state.actors).filter(
     (a) => a.active && a.nextDecisionAt !== undefined,
   ).length;
-  return state.decisions.filter((d) => !d.final).length + pending;
+  return (
+    state.decisions.filter((d) => !d.final && d.mode !== "converse").length +
+    pending
+  );
 }
 
-function ensureAudience(ctx: Context): void {
+/** Hands a paper to the Directorate; Lü Fang disposes of it at his next batch. */
+function toDirectorate(ctx: Context, documentId: string): void {
+  ctx.commit("document.to_directorate", { documentId });
+  wake(ctx, ids.lvFang);
+}
+
+const secluded = (state: CourtState, time: number) =>
+  state.secludedUntil !== undefined && time < state.secludedUntil;
+
+function requestInterruption(ctx: Context, byId: string, reason: string): void {
+  if (!secluded(ctx.state, ctx.time) || ctx.state.pendingInterruption) return;
   const at = nextShichen(ctx.time, WU);
-  const current = ctx.state.audienceScheduledAt;
-  if (current !== undefined && current <= at) return;
-  if (at > ctx.state.endsAt) return;
-  ctx.commit("court.audience_scheduled", { at });
+  if (at >= ctx.state.secludedUntil! || at > ctx.state.endsAt) return;
+  ctx.commit("court.interrupt_requested", { byId, reason, at });
   ctx.later("court.audience_open", at, {});
 }
 
@@ -241,7 +271,7 @@ function edictRecipients(
       add(ids.hu);
       break;
     case "order_inquiry":
-      if (edict.params.agent === "hu") add(ids.hu);
+      add(edict.params.agent === "hu" ? ids.hu : ids.luBing);
       break;
     case "reprimand":
       add(edict.params.actorId as string);
@@ -296,6 +326,41 @@ function issueEdict(
   return id;
 }
 
+function copyToCabinet(
+  ctx: Context,
+  rescripts: readonly { documentId: string; rescript: Rescript }[],
+): void {
+  const outer = rescripts.filter(
+    (r) => ctx.state.documents[r.documentId]!.kind === "memorial",
+  );
+  if (!outer.length) return;
+  // The cabinet cannot tell an endorsement by the Directorate from one by the throne.
+  const shown = (d: Rescript["disposition"]) =>
+    d === "proxy" ? "follow_draft" : d;
+  const items = outer.map((r) => {
+    const doc = ctx.state.documents[r.documentId]!;
+    return {
+      subject: doc.subject,
+      from: ctx.state.actors[doc.fromId]?.name ?? doc.fromId,
+      disposition: shown(r.rescript.disposition),
+      ...(r.rescript.text ? { vermilionText: r.rescript.text } : {}),
+      ...(r.rescript.edict ? { edict: r.rescript.edict.kind } : {}),
+    };
+  });
+  const surprising = outer.some(
+    (r) =>
+      shown(r.rescript.disposition) !== "follow_draft" ||
+      ctx.state.documents[r.documentId]!.fromId === ids.yanSong,
+  );
+  observe(
+    ctx,
+    ids.yanSong,
+    "rescripts_copied_to_cabinet",
+    j({ items }),
+    surprising,
+  );
+}
+
 function handleRescript(
   ctx: Context,
   options: Options,
@@ -304,6 +369,22 @@ function handleRescript(
   const audience = ctx.state.audience;
   if (ctx.state.phase !== "audience" || audience?.id !== submission.audienceId)
     throw new Error("This audience is not open");
+  const interruption = audience.interruption;
+  if (submission.decline) {
+    if (!interruption || interruption.admitted)
+      throw new Error("There is no interruption to decline");
+    ctx.commit("court.declined", { audienceId: audience.id });
+    observe(
+      ctx,
+      interruption.byId,
+      "interruption_declined",
+      { content: "皇上闭关修玄，未召见。" },
+      false,
+    );
+    return;
+  }
+  if (interruption && !interruption.admitted)
+    throw new Error("Admit or decline the interruption first");
   const byId = new Map(submission.items.map((i) => [i.documentId, i]));
   for (const key of byId.keys())
     if (!audience.documentIds.includes(key))
@@ -312,6 +393,7 @@ function handleRescript(
   const pending: { doc: CourtDocument; edict: Edict; text: string }[] = [];
   for (const documentId of audience.documentIds) {
     const doc = ctx.state.documents[documentId]!;
+    if (doc.rescript) continue;
     const item = byId.get(documentId) ?? { documentId, disposition: "hold" };
     if (item.disposition === "hold") {
       rescripts.push({
@@ -330,13 +412,17 @@ function handleRescript(
       rescript: { disposition: item.disposition, edict, text, at: ctx.time },
     });
   }
+  const span = submission.seclusionDays ?? 1;
+  if (!Number.isInteger(span) || span < 1 || span > maxSeclusionDays)
+    throw new Error("Seclusion must last 1 to 30 days");
+  const next = ctx.time + days(span);
   ctx.commit("court.rescripted", {
     audienceId: audience.id,
     rescripts: j(rescripts),
+    ...(next <= ctx.state.endsAt ? { nextAudienceAt: next } : {}),
+    ...(span > 1 ? { secludedUntil: next } : {}),
   });
-  const periodic = nextShichen(ctx.time + days(10) - 1, WU);
-  if (periodic < ctx.state.endsAt)
-    ctx.later("court.audience_open", periodic, { periodic: true });
+  if (next <= ctx.state.endsAt) ctx.later("court.audience_open", next, {});
   for (const { doc, edict, text } of pending) {
     const edictId = issueEdict(ctx, options, edict, text, doc);
     if (edictId)
@@ -347,33 +433,118 @@ function handleRescript(
   }
   for (const special of submission.specials)
     issueEdict(ctx, options, special.edict, special.text ?? "");
-  const outer = rescripts.filter(
-    (r) => ctx.state.documents[r.documentId]!.kind === "memorial",
-  );
-  if (outer.length) {
-    const items = outer.map((r) => {
-      const doc = ctx.state.documents[r.documentId]!;
-      return {
-        subject: doc.subject,
-        from: ctx.state.actors[doc.fromId]?.name ?? doc.fromId,
-        disposition: r.rescript.disposition,
-        ...(r.rescript.text ? { vermilionText: r.rescript.text } : {}),
-        ...(r.rescript.edict ? { edict: r.rescript.edict.kind } : {}),
-      };
+  copyToCabinet(ctx, rescripts);
+  const standing = submission.standing;
+  if (
+    standing &&
+    (standing.mode !== ctx.state.standing.mode ||
+      standing.instruction.trim() !== ctx.state.standing.instruction)
+  ) {
+    ctx.commit("court.standing_set", {
+      mode: standing.mode,
+      instruction: standing.instruction.trim(),
     });
-    const surprising = outer.some(
-      (r) =>
-        r.rescript.disposition !== "follow_draft" ||
-        ctx.state.documents[r.documentId]!.fromId === ids.yanSong,
-    );
+    observe(ctx, ids.lvFang, "standing_orders", {
+      mode: standing.mode === "personal" ? "亲览全部" : "司礼监代劳",
+      instruction: standing.instruction.trim() || "（无）",
+    });
+  }
+  if (span > 1)
     observe(
       ctx,
-      ids.yanSong,
-      "rescripts_copied_to_cabinet",
-      j({ items }),
-      surprising,
+      ids.lvFang,
+      "seclusion",
+      { content: `皇上闭关修玄${span}日。` },
+      false,
     );
+}
+
+/** Opens the desk: papers the Directorate or Lu Bing has put before the throne. */
+function deskContents(state: CourtState) {
+  return {
+    documentIds: Object.values(state.documents)
+      .filter(
+        (d) =>
+          d.readyForRulerAt !== undefined &&
+          d.onDeskAt === undefined &&
+          d.rescript === undefined,
+      )
+      .map((d) => d.id),
+    oralReportIds: state.oralReports.filter((r) => !r.heard).map((r) => r.id),
+  };
+}
+
+function noteDirectAudience(ctx: Context, documentIds: readonly string[]) {
+  if (
+    documentIds.some(
+      (id) => ctx.state.documents[id]!.route?.channel === "direct",
+    )
+  )
+    observe(
+      ctx,
+      ids.lvFang,
+      "direct_audience",
+      { content: "陆炳今日单独面圣，所奏何事不详。" },
+      false,
+    );
+}
+
+function openAudience(ctx: Context): void {
+  const state = ctx.state;
+  if (state.phase !== "running" || ctx.time !== state.nextAudienceAt) return;
+  const id = `audience-${state.audienceCount + 1}`;
+  const base = { id, openedAt: ctx.time, conversation: [] };
+  const interruption = state.pendingInterruption;
+  if (secluded(state, ctx.time)) {
+    if (!interruption) return;
+    ctx.commit("court.audience_opened", {
+      audience: j({
+        ...base,
+        documentIds: [],
+        oralReportIds: [],
+        interruption: { ...interruption, admitted: false },
+      }),
+    });
+    return;
   }
+  const contents = deskContents(state);
+  ctx.commit("court.audience_opened", {
+    audience: j({ ...base, ...contents }),
+  });
+  noteDirectAudience(ctx, contents.documentIds);
+}
+
+function handleAudienceAction(
+  ctx: Context,
+  action: Exclude<AudienceAction, { type: "converse" }>,
+): void {
+  const audience = ctx.state.audience;
+  if (ctx.state.phase !== "audience" || !audience)
+    throw new Error("No audience is open");
+  if (action.type === "admit") {
+    if (!audience.interruption || audience.interruption.admitted)
+      throw new Error("There is no interruption to admit");
+    const contents = deskContents(ctx.state);
+    ctx.commit("court.admitted", j(contents));
+    noteDirectAudience(ctx, contents.documentIds);
+    return;
+  }
+  const doc = ctx.state.documents[action.documentId];
+  if (
+    !doc ||
+    !audience.documentIds.includes(doc.id) ||
+    doc.directorate?.action !== "summarize" ||
+    doc.revealedAt !== undefined
+  )
+    throw new Error("This paper has no folded original to call for");
+  ctx.commit("document.revealed", { documentId: doc.id });
+  observe(
+    ctx,
+    ids.lvFang,
+    "original_called_for",
+    { content: `皇上调阅了《${doc.subject}》原本。` },
+    false,
+  );
 }
 
 function handleArrival(ctx: Context, documentId: string, actorId: string) {
@@ -386,8 +557,7 @@ function handleArrival(ctx: Context, documentId: string, actorId: string) {
       return;
     }
     ctx.commit("document.delivered", { documentId, actorId });
-    ctx.commit("document.ready", { documentId });
-    ensureAudience(ctx);
+    toDirectorate(ctx, documentId);
     return;
   }
   ctx.commit("document.delivered", { documentId, actorId });
@@ -760,16 +930,20 @@ async function handleDecisions(
     });
   }
   const settled = await Promise.allSettled(
-    requests.map(async ({ actorId, input }) =>
-      parseCourtDecision(
+    requests.map(async ({ actorId, input }) => {
+      const check = actorId === ids.luBing ? routesCheck(ctx.state) : undefined;
+      const decision = parseCourtDecision(
         await options.model({
           decisionEpisodeId: String(input.decisionEpisodeId),
           sessionKey: `${options.runId}:${actorId}`,
           systemPrompt: systemPrompt(ctx.state, actorId, options.language),
           prompt: decisionPrompt(input),
+          ...(check ? { check } : {}),
         }),
-      ),
-    ),
+      );
+      check?.(decision);
+      return decision;
+    }),
   );
   const failure = settled.find((s) => s.status === "rejected");
   if (failure) throw (failure as PromiseRejectedResult).reason;
@@ -777,6 +951,7 @@ async function handleDecisions(
     ctx.cause = request.cause;
     applyDecision(
       ctx,
+      options,
       request.actorId,
       request.input,
       (settled[index] as PromiseFulfilledResult<CourtDecision>).value,
@@ -784,11 +959,68 @@ async function handleDecisions(
   });
 }
 
+/** Lu Bing may not sit on a field report: every one must be routed. */
+function routesCheck(state: CourtState) {
+  const awaiting = reportsAwaitingRoute(state).map((d) => d.id);
+  return (decision: CourtDecision) => {
+    for (const id of awaiting) {
+      const route = decision.routes.find((r) => r.reportId === id);
+      if (!route || !(route.channel in routeChannels))
+        throw new Error(`Lu Bing did not route report ${id}`);
+    }
+  };
+}
+
+async function handleConverse(
+  ctx: Context,
+  options: Options,
+  message: string,
+): Promise<void> {
+  const audience = ctx.state.audience;
+  if (ctx.state.phase !== "audience" || !audience)
+    throw new Error("No audience is open");
+  if (audience.interruption && !audience.interruption.admitted)
+    throw new Error("Admit the interruption first");
+  const rounds = audience.conversation.filter((c) => c.role === "ruler");
+  if (rounds.length >= conversationRounds)
+    throw new Error("No more rounds of conversation today");
+  const text = message.trim();
+  if (!text || text.length > 400) throw new Error("Say something shorter");
+  const input: JsonObject = {
+    ...buildNpcInput(
+      ctx.state,
+      ids.lvFang,
+      ctx.time,
+      options.runId,
+      options.language,
+    ),
+    conversationToday: j(audience.conversation),
+    emperorSays: text,
+  };
+  const check = (decision: CourtDecision) => {
+    if (!decision.reply?.trim()) throw new Error("Lü Fang gave no reply");
+  };
+  const decision = parseCourtDecision(
+    await options.model({
+      decisionEpisodeId: String(input.decisionEpisodeId),
+      sessionKey: `${options.runId}:${ids.lvFang}`,
+      systemPrompt: conversationSystemPrompt(ctx.state, options.language),
+      prompt: decisionPrompt(input),
+      check,
+    }),
+  );
+  check(decision);
+  applyDecision(ctx, options, ids.lvFang, input, decision, "converse");
+  ctx.commit("court.conversed", { message: text, reply: decision.reply! });
+}
+
 function applyDecision(
   ctx: Context,
+  options: Options,
   actorId: string,
   input: JsonObject,
   decision: CourtDecision,
+  mode?: "converse",
 ): void {
   const actor = ctx.state.actors[actorId]!;
   const final = !actor.active;
@@ -923,11 +1155,21 @@ function applyDecision(
       });
     }
   }
+  const dispositions =
+    actorId === ids.lvFang ? checkDispositions(ctx.state, decision) : [];
+  for (const d of decision.dispositions)
+    if (!dispositions.some((x) => x.item === d))
+      rejected.push({
+        type: "disposition",
+        subject: ctx.state.documents[d.documentId]?.subject ?? d.documentId,
+        reason: dispositionProblem(ctx.state, d) ?? "重复处置",
+      });
   const record: CourtDecisionRecord = {
     decisionEpisodeId,
     actorId,
     at: ctx.time,
     final,
+    ...(mode ? { mode } : {}),
     input,
     output: j(decision),
     documentIds: documents.map((d) => d.id),
@@ -945,9 +1187,135 @@ function applyDecision(
   }
   for (const { documentId, draft } of drafts) {
     ctx.commit("document.drafted", { documentId, draft: j(draft) });
-    ctx.commit("document.ready", { documentId });
-    ensureAudience(ctx);
+    toDirectorate(ctx, documentId);
   }
+  for (const { item } of dispositions)
+    applyDisposition(ctx, options, item, mode === "converse");
+  if (actorId === ids.lvFang && mode !== "converse") {
+    if (decision.report?.trim())
+      ctx.commit("court.oral_report", { text: decision.report.trim() });
+    if (decision.interrupt)
+      requestInterruption(ctx, actorId, decision.interrupt.reason);
+  }
+  if (actorId === ids.luBing)
+    for (const route of decision.routes) {
+      if (!reportsAwaitingRoute(ctx.state).some((d) => d.id === route.reportId))
+        continue;
+      ctx.commit("document.routed", {
+        documentId: route.reportId,
+        channel: route.channel,
+        ...(route.note?.trim() ? { note: route.note.trim() } : {}),
+      });
+      if (route.channel === "directorate") toDirectorate(ctx, route.reportId);
+      else if (route.interrupt)
+        requestInterruption(
+          ctx,
+          actorId,
+          route.note?.trim() || "锦衣卫有要事面奏。",
+        );
+    }
+}
+
+type DispositionItem = CourtDecision["dispositions"][number];
+
+function dispositionProblem(
+  state: CourtState,
+  item: DispositionItem,
+): string | undefined {
+  const doc = state.documents[item.documentId];
+  const inbox = directorateInbox(state).some((d) => d.id === item.documentId);
+  const held = directorateHeld(state).some((d) => d.id === item.documentId);
+  if (!doc || (!inbox && !held)) return "这份本章不在你手里";
+  switch (item.action) {
+    case "present":
+      return undefined;
+    case "summarize":
+      return item.text?.trim() ? undefined : "口奏摘要须写出概括";
+    case "hold":
+      return inbox ? undefined : "已经留中";
+    case "proxy":
+    case "return":
+      if (!inbox) return "留中的本章只能呈上";
+      if (!doc.draft || doc.kind !== "memorial")
+        return "只有带票拟的外朝奏疏可以代批或发回";
+      return item.action === "proxy" && edictProblem(state, doc.draft.edict)
+        ? "票拟已无法施行"
+        : undefined;
+    default:
+      return "没有这种处置";
+  }
+}
+
+function checkDispositions(state: CourtState, decision: CourtDecision) {
+  const seen = new Set<string>();
+  const out: { item: DispositionItem }[] = [];
+  for (const item of decision.dispositions) {
+    if (seen.has(item.documentId) || dispositionProblem(state, item)) continue;
+    seen.add(item.documentId);
+    out.push({ item });
+  }
+  return out;
+}
+
+function applyDisposition(
+  ctx: Context,
+  options: Options,
+  item: DispositionItem,
+  inAudience: boolean,
+): void {
+  const doc = ctx.state.documents[item.documentId]!;
+  const text = item.text?.trim();
+  if (item.action === "return") {
+    ctx.commit("document.returned", {
+      documentId: doc.id,
+      note: text || "着内阁重拟。",
+    });
+    observe(ctx, ids.yanSong, "returned_by_directorate", {
+      subject: doc.subject,
+      from: ctx.state.actors[doc.fromId]?.name ?? doc.fromId,
+      note: text || "着内阁重拟。",
+    });
+    return;
+  }
+  ctx.commit("document.directed", {
+    documentId: doc.id,
+    action: item.action,
+    ...(text ? { text } : {}),
+  });
+  if (item.action === "proxy") {
+    const rescript: Rescript = {
+      disposition: "proxy",
+      edict: doc.draft!.edict,
+      text: doc.draft!.text,
+      at: ctx.time,
+    };
+    ctx.commit("document.proxied", {
+      documentId: doc.id,
+      rescript: j(rescript),
+    });
+    const edictId = issueEdict(
+      ctx,
+      options,
+      doc.draft!.edict,
+      doc.draft!.text,
+      doc,
+    );
+    if (edictId)
+      ctx.commit("document.rescript_linked", {
+        documentId: doc.id,
+        edictDocumentId: edictId,
+      });
+    copyToCabinet(ctx, [{ documentId: doc.id, rescript }]);
+    return;
+  }
+  const audience = ctx.state.audience;
+  if (
+    inAudience &&
+    item.action !== "hold" &&
+    audience &&
+    (!audience.interruption || audience.interruption.admitted)
+  )
+    ctx.commit("court.desk_added", { documentId: doc.id });
 }
 
 export function createCourtModel(options: Options): DomainModel<CourtState> {
@@ -961,34 +1329,22 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
         const p = event.payload;
         if (ctx.state.phase === "complete") break;
         switch (event.eventType) {
-          case "court.audience_open": {
-            const documentIds = Object.values(ctx.state.documents)
-              .filter(
-                (d) =>
-                  d.readyForRulerAt !== undefined &&
-                  d.onDeskAt === undefined &&
-                  d.rescript === undefined,
-              )
-              .map((d) => d.id);
-            const idle =
-              p.periodic === true &&
-              time - (ctx.state.lastAudienceAt ?? 0) >= days(10);
-            if (
-              ctx.state.phase !== "running" ||
-              (!documentIds.length && !idle)
-            ) {
-              if (p.periodic !== true) ctx.commit("court.audience_skipped", {});
-              break;
-            }
-            ctx.commit("court.audience_opened", {
-              audience: {
-                id: `audience-${ctx.state.audienceCount + 1}`,
-                openedAt: time,
-                documentIds,
-              },
-            });
+          case "court.audience_open":
+            openAudience(ctx);
             break;
-          }
+          case "court.converse":
+            await handleConverse(ctx, options, String(p.message));
+            break;
+          case "court.reveal":
+          case "court.admit":
+            handleAudienceAction(
+              ctx,
+              p.action as unknown as Exclude<
+                AudienceAction,
+                { type: "converse" }
+              >,
+            );
+            break;
           case "court.rescript":
             handleRescript(
               ctx,
@@ -1023,7 +1379,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
               observe(ctx, actorId, "rumor", {
                 content: `锦衣卫缇骑奉旨抵杭，往${ctx.state.counties[p.countyId as CountyId].name}查勘。`,
               });
-            ctx.later("jinyiwei.inspect", time + days(2), p);
+            ctx.later("jinyiwei.inspect", time + days(5), p);
             break;
           case "jinyiwei.inspect": {
             const countyId = p.countyId as CountyId;
@@ -1049,7 +1405,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
                 id: nextDocumentId(ctx.state),
                 kind: "report",
                 fromId: ids.jinyiwei,
-                toIds: [ids.ruler],
+                toIds: [ids.luBing],
                 subject:
                   options.language === "en"
                     ? `Embroidered Guard report on ${ctx.state.counties[countyId].name}`
@@ -1113,6 +1469,24 @@ function patchDocument(
   };
 }
 
+function attachToDesk(
+  state: CourtState,
+  documentIds: readonly string[],
+  oralReportIds: readonly string[],
+  time: SimTime,
+): CourtState {
+  let next = state;
+  for (const id of documentIds)
+    next = patchDocument(next, id, { onDeskAt: time });
+  if (!oralReportIds.length) return next;
+  return {
+    ...next,
+    oralReports: next.oralReports.map((r) =>
+      oralReportIds.includes(r.id) ? { ...r, heard: true } : r,
+    ),
+  };
+}
+
 export function reduceCourtState(
   state: CourtState,
   event: DomainEvent,
@@ -1120,20 +1494,104 @@ export function reduceCourtState(
   const p = event.payload;
   const time = event.occurredAt;
   switch (event.eventType) {
-    case "court.audience_scheduled":
-      return { ...state, audienceScheduledAt: simTime(Number(p.at)) };
-    case "court.audience_skipped": {
-      const { audienceScheduledAt: _, ...rest } = state;
-      return rest;
-    }
     case "court.audience_opened": {
       const audience = p.audience as unknown as CourtState["audience"] & {};
       let next: CourtState = { ...state, phase: "audience", audience };
-      delete (next as { audienceScheduledAt?: SimTime }).audienceScheduledAt;
-      for (const id of audience.documentIds)
-        next = patchDocument(next, id, { onDeskAt: time });
+      delete (next as { nextAudienceAt?: SimTime }).nextAudienceAt;
+      delete (next as { pendingInterruption?: unknown }).pendingInterruption;
+      return attachToDesk(
+        next,
+        audience.documentIds,
+        audience.oralReportIds,
+        time,
+      );
+    }
+    case "court.admitted": {
+      const audience = state.audience!;
+      const next: CourtState = {
+        ...state,
+        audience: {
+          ...audience,
+          documentIds: p.documentIds as string[],
+          oralReportIds: p.oralReportIds as string[],
+          interruption: { ...audience.interruption!, admitted: true },
+        },
+      };
+      delete (next as { secludedUntil?: SimTime }).secludedUntil;
+      return attachToDesk(
+        next,
+        p.documentIds as string[],
+        p.oralReportIds as string[],
+        time,
+      );
+    }
+    case "court.declined": {
+      const next: CourtState = {
+        ...state,
+        phase: "running",
+        audienceCount: state.audienceCount + 1,
+        nextAudienceAt: state.secludedUntil!,
+      };
+      delete (next as { audience?: unknown }).audience;
       return next;
     }
+    case "court.desk_added": {
+      const audience = state.audience!;
+      return attachToDesk(
+        {
+          ...state,
+          audience: {
+            ...audience,
+            documentIds: [...audience.documentIds, String(p.documentId)],
+          },
+        },
+        [String(p.documentId)],
+        [],
+        time,
+      );
+    }
+    case "court.conversed": {
+      const audience = state.audience!;
+      return {
+        ...state,
+        audience: {
+          ...audience,
+          conversation: [
+            ...audience.conversation,
+            { role: "ruler", text: String(p.message) },
+            { role: "lv", text: String(p.reply) },
+          ],
+        },
+      };
+    }
+    case "court.interrupt_requested":
+      return {
+        ...state,
+        pendingInterruption: { byId: String(p.byId), reason: String(p.reason) },
+        nextAudienceAt: simTime(Number(p.at)),
+      };
+    case "court.oral_report":
+      return {
+        ...state,
+        oralReports: [
+          ...state.oralReports,
+          {
+            id: `oral-${state.oralReports.length}`,
+            at: time,
+            text: String(p.text),
+            heard: false,
+          },
+        ],
+      };
+    case "court.standing_set":
+      return {
+        ...state,
+        standing: {
+          mode: p.mode as CourtState["standing"]["mode"],
+          instruction: String(p.instruction),
+          setAt: time,
+        },
+      };
     case "court.rescripted": {
       let next: CourtState = {
         ...state,
@@ -1142,6 +1600,11 @@ export function reduceCourtState(
         lastAudienceAt: time,
       };
       delete (next as { audience?: unknown }).audience;
+      delete (next as { secludedUntil?: SimTime }).secludedUntil;
+      if (p.nextAudienceAt !== undefined)
+        next = { ...next, nextAudienceAt: simTime(Number(p.nextAudienceAt)) };
+      if (p.secludedUntil !== undefined)
+        next = { ...next, secludedUntil: simTime(Number(p.secludedUntil)) };
       for (const r of p.rescripts as unknown as {
         documentId: string;
         rescript: Rescript;
@@ -1149,6 +1612,65 @@ export function reduceCourtState(
         next = patchDocument(next, r.documentId, { rescript: r.rescript });
       return next;
     }
+    case "document.to_directorate": {
+      const doc = state.documents[String(p.documentId)]!;
+      return patchDocument(state, doc.id, {
+        directorate: { receivedAt: time },
+        ...(doc.deliveredTo.includes(ids.lvFang)
+          ? {}
+          : {
+              deliveredTo: [...doc.deliveredTo, ids.lvFang],
+              arrivals: { ...doc.arrivals, [ids.lvFang]: time },
+            }),
+      });
+    }
+    case "document.directed": {
+      const doc = state.documents[String(p.documentId)]!;
+      const action = p.action as DirectorateAction;
+      return patchDocument(state, doc.id, {
+        directorate: {
+          receivedAt: doc.directorate!.receivedAt,
+          action,
+          at: time,
+          ...(p.text !== undefined ? { text: String(p.text) } : {}),
+        },
+        ...(action === "present" || action === "summarize"
+          ? { readyForRulerAt: time }
+          : {}),
+      });
+    }
+    case "document.proxied":
+      return patchDocument(state, String(p.documentId), {
+        rescript: p.rescript as unknown as Rescript,
+      });
+    case "document.returned": {
+      const doc = state.documents[String(p.documentId)]!;
+      const { draft: _d, directorate: _r, ...rest } = doc;
+      return {
+        ...state,
+        documents: {
+          ...state.documents,
+          [doc.id]: {
+            ...rest,
+            returns: [
+              ...(doc.returns ?? []),
+              { at: time, note: String(p.note) },
+            ],
+          },
+        },
+      };
+    }
+    case "document.routed":
+      return patchDocument(state, String(p.documentId), {
+        route: {
+          channel: p.channel as "direct" | "directorate",
+          at: time,
+          ...(p.note !== undefined ? { note: String(p.note) } : {}),
+        },
+        ...(p.channel === "direct" ? { readyForRulerAt: time } : {}),
+      });
+    case "document.revealed":
+      return patchDocument(state, String(p.documentId), { revealedAt: time });
     case "document.rescript_linked": {
       const doc = state.documents[String(p.documentId)]!;
       return patchDocument(state, doc.id, {
@@ -1206,16 +1728,17 @@ export function reduceCourtState(
       const record = p.record as unknown as CourtDecisionRecord;
       const actor = state.actors[record.actorId]!;
       const { nextDecisionAt: _, ...rest } = actor;
+      const updated =
+        record.mode === "converse"
+          ? actor
+          : {
+              ...rest,
+              lastDecisionAt: time,
+              ...(record.final ? { finalDecisionDone: true } : {}),
+            };
       return {
         ...state,
-        actors: {
-          ...state.actors,
-          [actor.id]: {
-            ...rest,
-            lastDecisionAt: time,
-            ...(record.final ? { finalDecisionDone: true } : {}),
-          },
-        },
+        actors: { ...state.actors, [actor.id]: updated },
         decisions: [...state.decisions, record],
         gaps: [...state.gaps, ...(p.gaps as unknown as PrimitiveGap[])],
       };

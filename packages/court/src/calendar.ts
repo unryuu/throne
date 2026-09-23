@@ -3,6 +3,7 @@ import { simTime, type SimTime } from "@throne/shared-types";
 /** One SimTime unit is one shichen; see ADR 0006. */
 export const SHICHEN_PER_DAY = 12;
 export const CHEN = 4;
+export const SI = 5;
 export const WU = 6;
 
 export const at = (day: number, shichen = 0): SimTime =>

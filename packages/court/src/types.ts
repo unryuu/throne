@@ -13,6 +13,8 @@ export type CourtActor = {
   readonly capabilities: readonly string[];
   readonly documentKinds: readonly DocumentKind[];
   readonly profile: JsonObject;
+  /** Shichen of day for decisions and minimum days between them (default 辰时, 2). */
+  readonly cadence?: { readonly slot: number; readonly gapDays: number };
   readonly nextDecisionAt?: SimTime;
   readonly lastDecisionAt?: SimTime;
   readonly finalDecisionDone?: boolean;
@@ -67,8 +69,12 @@ export type Draft = {
   readonly decisionEpisodeId?: string;
 };
 
+export type DirectorateAction =
+  "present" | "summarize" | "hold" | "proxy" | "return";
+
 export type Rescript = {
-  readonly disposition: "follow_draft" | "custom" | "hold";
+  /** `proxy`: the Directorate endorsed the draft in the emperor's name. */
+  readonly disposition: "follow_draft" | "custom" | "hold" | "proxy";
   readonly edict?: Edict;
   readonly text?: string;
   readonly at: SimTime;
@@ -94,6 +100,22 @@ export type CourtDocument = {
   readonly replyToId?: string;
   readonly decisionEpisodeId?: string;
   readonly scripted?: boolean;
+  /** Passage through the Directorate of Ceremonial (Lü Fang). */
+  readonly directorate?: {
+    readonly receivedAt: SimTime;
+    readonly action?: DirectorateAction;
+    readonly text?: string;
+    readonly at?: SimTime;
+  };
+  /** When the emperor called for the original of a paper Lü only summarized. */
+  readonly revealedAt?: SimTime;
+  readonly returns?: readonly { readonly at: SimTime; readonly note: string }[];
+  /** Lu Bing's routing of an Embroidered Guard field report. */
+  readonly route?: {
+    readonly channel: "direct" | "directorate";
+    readonly note?: string;
+    readonly at: SimTime;
+  };
 };
 
 export type ActionStatus = "started" | "succeeded" | "failed" | "impossible";
@@ -144,6 +166,7 @@ export type CourtDecisionRecord = {
   readonly actorId: string;
   readonly at: SimTime;
   readonly final: boolean;
+  readonly mode?: "converse";
   readonly input: JsonObject;
   readonly output: JsonObject;
   readonly documentIds: readonly string[];
@@ -155,6 +178,23 @@ export type Audience = {
   readonly id: string;
   readonly openedAt: SimTime;
   readonly documentIds: readonly string[];
+  readonly oralReportIds: readonly string[];
+  readonly conversation: readonly {
+    readonly role: "ruler" | "lv";
+    readonly text: string;
+  }[];
+  readonly interruption?: {
+    readonly byId: string;
+    readonly reason: string;
+    readonly admitted: boolean;
+  };
+};
+
+export type OralReport = {
+  readonly id: string;
+  readonly at: SimTime;
+  readonly text: string;
+  readonly heard: boolean;
 };
 
 export type CourtState = {
@@ -162,8 +202,19 @@ export type CourtState = {
   readonly seed: string;
   readonly audience?: Audience;
   readonly audienceCount: number;
-  readonly audienceScheduledAt?: SimTime;
+  readonly nextAudienceAt?: SimTime;
   readonly lastAudienceAt?: SimTime;
+  readonly secludedUntil?: SimTime;
+  readonly pendingInterruption?: {
+    readonly byId: string;
+    readonly reason: string;
+  };
+  readonly standing: {
+    readonly mode: "personal" | "delegate";
+    readonly instruction: string;
+    readonly setAt?: SimTime;
+  };
+  readonly oralReports: readonly OralReport[];
   readonly actors: Readonly<Record<string, CourtActor>>;
   readonly counties: Readonly<Record<CountyId, County>>;
   readonly policy: {

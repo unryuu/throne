@@ -3,6 +3,7 @@ import type { Locale, MessageKey, Translator } from "@throne/localization";
 import {
   formatCourtTime,
   ids,
+  type AudienceAction,
   type CourtAction,
   type CourtRulerView,
   type CourtState,
@@ -69,19 +70,14 @@ function defaultParams(kind: EdictKind, view: CourtRulerView): JsonObject {
   }
 }
 
-function initialChoices(view: CourtRulerView): Record<string, Choice> {
-  return Object.fromEntries(
-    (view.audience?.documents ?? []).map((d) => [
-      d.id,
-      {
-        disposition: d.draft ? "follow_draft" : "hold",
-        edict: d.draft
-          ? { kind: d.draft.edict.kind, params: d.draft.edict.params }
-          : { kind: "acknowledge", params: {} },
-        text: d.draft?.text ?? "",
-      },
-    ]),
-  );
+function initialChoice(d: RulerDocumentView): Choice {
+  return {
+    disposition: d.draft ? "follow_draft" : "hold",
+    edict: d.draft
+      ? { kind: d.draft.edict.kind, params: d.draft.edict.params }
+      : { kind: "acknowledge", params: {} },
+    text: d.draft?.text ?? "",
+  };
 }
 
 export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
@@ -92,7 +88,14 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [verified, setVerified] = useState(false);
+  const [talk, setTalk] = useState("");
+  const [standing, setStanding] = useState<CourtRulerView["standing"]>({
+    mode: "personal",
+    instruction: "",
+  });
+  const [seclusion, setSeclusion] = useState(1);
   const audienceId = snapshot?.view.audience?.id;
+  const deskIds = snapshot?.view.audience?.documents.map((d) => d.id).join();
 
   useEffect(() => {
     const id = recall();
@@ -103,9 +106,21 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   }, []);
   useEffect(() => {
     if (!snapshot) return;
-    setChoices(initialChoices(snapshot.view));
+    setChoices({});
     setSpecials([]);
+    setTalk("");
+    setSeclusion(1);
+    setStanding(snapshot.view.standing);
   }, [audienceId]);
+  useEffect(() => {
+    // Papers can join an open desk: after admitting an interruption or when Lü brings them.
+    setChoices((current) => {
+      const next = { ...current };
+      for (const d of snapshot?.view.audience?.documents ?? [])
+        next[d.id] ??= initialChoice(d);
+      return next;
+    });
+  }, [audienceId, deskIds]);
   useEffect(() => {
     if (snapshot?.status !== "running") return;
     let cancelled = false;
@@ -170,11 +185,41 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           edict: { kind: s.kind, params: s.params },
           text: s.text,
         })),
+        standing,
+        seclusionDays: seclusion,
       };
       setSnapshot({ ...snapshot, status: "running" });
       setSnapshot(
         await request<CourtSnapshot>(`/${snapshot.id}/rescript`, {
           submission,
+        }),
+      );
+    });
+  const act = (action: AudienceAction) =>
+    perform(async () => {
+      if (!snapshot?.view.audience) return;
+      const audience = snapshot.view.audience;
+      setSnapshot({ ...snapshot, status: "running" });
+      setSnapshot(
+        await request<CourtSnapshot>(`/${snapshot.id}/act`, {
+          audienceId: audience.id,
+          action,
+        }),
+      );
+      if (action.type === "converse") setTalk("");
+    });
+  const decline = () =>
+    perform(async () => {
+      if (!snapshot?.view.audience) return;
+      setSnapshot({ ...snapshot, status: "running" });
+      setSnapshot(
+        await request<CourtSnapshot>(`/${snapshot.id}/rescript`, {
+          submission: {
+            audienceId: snapshot.view.audience.id,
+            items: [],
+            specials: [],
+            decline: true,
+          },
         }),
       );
     });
@@ -209,6 +254,9 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           <p className="panel-label court-clock">
             {formatCourtTime(view.time, locale)} ·{" "}
             {t(`court.status.${snapshot.status}` as MessageKey)}
+            {view.secludedUntil !== undefined
+              ? ` · ${t("court.secluded", { time: formatCourtTime(view.secludedUntil, locale) })}`
+              : ""}
           </p>
           {snapshot.status === "running" ? (
             <p role="status" className="court-running">
@@ -232,9 +280,42 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               {t("court.retry")}
             </button>
           ) : null}
-          {snapshot.status === "waiting" && view.audience ? (
+          {snapshot.status === "waiting" &&
+          view.audience?.interruption &&
+          !view.audience.interruption.admitted ? (
+            <section className="court-desk" aria-label={t("court.desk")}>
+              <p role="alert" className="court-interruption">
+                {t("court.interruption", {
+                  name: view.audience.interruption.byName,
+                  reason: view.audience.interruption.reason,
+                })}
+              </p>
+              <div className="court-actions">
+                <button
+                  className="restart-button"
+                  disabled={pending}
+                  onClick={() => void act({ type: "admit" })}
+                >
+                  {t("court.admit")}
+                </button>
+                <button
+                  className="restart-button"
+                  disabled={pending}
+                  onClick={() => void decline()}
+                >
+                  {t("court.decline")}
+                </button>
+              </div>
+            </section>
+          ) : snapshot.status === "waiting" && view.audience ? (
             <section className="court-desk" aria-label={t("court.desk")}>
               <h3>{t("court.desk")}</h3>
+              {view.audience.oralReports.map((text, index) => (
+                <div className="court-oral" key={index}>
+                  <span>{t("court.oral")}</span>
+                  <p>{text}</p>
+                </div>
+              ))}
               {view.audience.documents.length === 0 ? (
                 <p className="fog-note">{t("court.emptyDesk")}</p>
               ) : null}
@@ -247,10 +328,52 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                   onChange={(next) =>
                     setChoices({ ...choices, [doc.id]: next })
                   }
+                  onReveal={() =>
+                    void act({ type: "reveal", documentId: doc.id })
+                  }
+                  pending={pending}
                   locale={locale}
                   t={t}
                 />
               ))}
+              <div className="court-talk">
+                <h4>{t("court.talk")}</h4>
+                {view.audience.conversation.map((line, index) => (
+                  <p
+                    key={index}
+                    className={`court-line court-line-${line.role}`}
+                  >
+                    <strong>
+                      {t(line.role === "ruler" ? "court.you" : "court.lv")}
+                    </strong>
+                    {line.text}
+                  </p>
+                ))}
+                {view.audience.roundsLeft > 0 ? (
+                  <>
+                    <textarea
+                      value={talk}
+                      maxLength={400}
+                      placeholder={t("court.talkPlaceholder")}
+                      onChange={(e) => setTalk(e.target.value)}
+                    />
+                    <p className="panel-label">
+                      {t("court.roundsLeft", {
+                        count: view.audience.roundsLeft,
+                      })}
+                    </p>
+                    <button
+                      className="court-link"
+                      disabled={pending || !talk.trim()}
+                      onClick={() =>
+                        void act({ type: "converse", message: talk.trim() })
+                      }
+                    >
+                      {t("court.talkSend")}
+                    </button>
+                  </>
+                ) : null}
+              </div>
               <div className="court-specials">
                 <h4>{t("court.special")}</h4>
                 {specials.map((special, index) => (
@@ -315,12 +438,50 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                   </button>
                 ) : null}
               </div>
+              <div className="court-standing">
+                <h4>{t("court.standing")}</h4>
+                <div className="view-switch">
+                  {(["personal", "delegate"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      className={standing.mode === mode ? "active" : ""}
+                      onClick={() => setStanding({ ...standing, mode })}
+                    >
+                      {t(`court.mode.${mode}`)}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={standing.instruction}
+                  maxLength={600}
+                  placeholder={t("court.instructionPlaceholder")}
+                  onChange={(e) =>
+                    setStanding({ ...standing, instruction: e.target.value })
+                  }
+                />
+              </div>
+              <label className="court-seclusion">
+                <span>{t("court.seclude")}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={seclusion}
+                  onChange={(e) =>
+                    setSeclusion(
+                      Math.min(30, Math.max(1, Number(e.target.value) || 1)),
+                    )
+                  }
+                />
+              </label>
               <button
                 className="restart-button court-submit"
                 disabled={pending}
                 onClick={() => void submit()}
               >
-                {t("court.submit")}
+                {seclusion > 1
+                  ? t("court.closeSeclude", { count: seclusion })
+                  : t("court.close")}
               </button>
             </section>
           ) : null}
@@ -372,6 +533,8 @@ function DeskDocument({
   view,
   choice,
   onChange,
+  onReveal,
+  pending,
   locale,
   t,
 }: {
@@ -379,6 +542,8 @@ function DeskDocument({
   view: CourtRulerView;
   choice: Choice | undefined;
   onChange: (next: Choice) => void;
+  onReveal: () => void;
+  pending: boolean;
   locale: Locale;
   t: Translator;
 }) {
@@ -400,7 +565,12 @@ function DeskDocument({
   return (
     <article className={`court-doc court-doc-${doc.kind}`}>
       <DocumentHead doc={doc} locale={locale} t={t} />
-      <p className="court-text">{doc.text}</p>
+      <DocumentBody doc={doc} t={t} />
+      {doc.folded ? (
+        <button className="court-link" disabled={pending} onClick={onReveal}>
+          {t("court.revealOriginal")}
+        </button>
+      ) : null}
       {doc.draft ? (
         <div className="court-draft">
           <span>{t("court.draft")}</span>
@@ -477,6 +647,31 @@ function DocumentHead({
         {formatCourtTime(doc.arrivedAt, locale)}
       </p>
       <h4 className="court-subject">{doc.subject}</h4>
+      {doc.direct ? <p className="court-badge">{t("court.direct")}</p> : null}
+    </>
+  );
+}
+
+function DocumentBody({ doc, t }: { doc: RulerDocumentView; t: Translator }) {
+  return (
+    <>
+      {doc.summary ? (
+        <div className="court-oral">
+          <span>{t("court.lvSummary")}</span>
+          <p>{doc.summary}</p>
+        </div>
+      ) : null}
+      {doc.folded ? (
+        <p className="fog-note">{t("court.folded")}</p>
+      ) : (
+        <p className="court-text">{doc.text}</p>
+      )}
+      {doc.luBingNote ? (
+        <div className="court-oral">
+          <span>{t("court.luNote")}</span>
+          <p>{doc.luBingNote}</p>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -613,7 +808,7 @@ function Archive({
           {[...view.archive].reverse().map((doc) => (
             <li className="document court-doc" key={doc.id}>
               <DocumentHead doc={doc} locale={locale} t={t} />
-              <p className="court-text">{doc.text}</p>
+              <DocumentBody doc={doc} t={t} />
               {doc.rescript ? (
                 <p className="court-rescript">
                   {t(
@@ -637,6 +832,7 @@ function Archive({
                 {formatCourtTime(e.sentAt, locale)} ·{" "}
                 {t(`court.edict.${e.edict.kind}` as MessageKey)} ·{" "}
                 {t("court.to", { names: e.toNames.join("、") })}
+                {e.proxy ? ` · ${t("court.proxy")}` : ""}
               </p>
               <h4 className="court-subject">{e.subject}</h4>
               <p className="court-rescript">{e.text}</p>
@@ -648,7 +844,14 @@ function Archive({
   );
 }
 
-const reviewOrder = [ids.yanSong, ids.zheng, ids.hu, ids.yang];
+const reviewOrder = [
+  ids.lvFang,
+  ids.yanSong,
+  ids.zheng,
+  ids.hu,
+  ids.yang,
+  ids.luBing,
+];
 
 function outcomeText(action: CourtAction): string {
   const o = action.outcome ?? {};
@@ -756,7 +959,24 @@ function CourtReviewView({
               {name(actorId)} · {state.actors[actorId]!.office}
             </h3>
             {decisions.map((d) => {
-              const output = d.output as { inner?: string };
+              const output = d.output as {
+                inner?: string;
+                report?: string;
+                reply?: string;
+                dispositions?: { documentId: string; action: string }[];
+                routes?: { reportId: string; channel: string }[];
+              };
+              const said = d.mode === "converse" ? output.reply : output.report;
+              const handled = [
+                ...(output.dispositions ?? []).map(
+                  (x) =>
+                    `${state.documents[x.documentId]?.subject ?? x.documentId} · ${t(`court.disposition.${x.action}` as MessageKey)}`,
+                ),
+                ...(output.routes ?? []).map(
+                  (r) =>
+                    `${state.documents[r.reportId]?.subject ?? r.reportId} · ${t(`court.route.${r.channel}` as MessageKey)}`,
+                ),
+              ];
               return (
                 <div className="court-decision" key={d.decisionEpisodeId}>
                   <p className="panel-label">
@@ -769,7 +989,18 @@ function CourtReviewView({
                   </div>
                   <div className="court-layer">
                     <span>{t("court.review.word")}</span>
-                    {d.documentIds.length ? (
+                    {d.mode === "converse" ? (
+                      <p className="panel-label">
+                        {t("court.you")}：{String(d.input.emperorSays ?? "")}
+                      </p>
+                    ) : null}
+                    {said ? (
+                      <div>
+                        <p className="panel-label">{t("court.review.said")}</p>
+                        <p>{said}</p>
+                      </div>
+                    ) : null}
+                    {d.documentIds.length || said ? (
                       d.documentIds.map((id) => {
                         const doc = state.documents[id]!;
                         return (
@@ -791,6 +1022,13 @@ function CourtReviewView({
                   </div>
                   <div className="court-layer">
                     <span>{t("court.review.deed")}</span>
+                    {handled.length ? (
+                      <ul>
+                        {handled.map((line, index) => (
+                          <li key={index}>{line}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                     {d.actionIds.length ? (
                       <ul>
                         {d.actionIds.map((id) => {
@@ -812,7 +1050,7 @@ function CourtReviewView({
                           );
                         })}
                       </ul>
-                    ) : (
+                    ) : handled.length ? null : (
                       <p className="fog-note">{t("court.review.nothing")}</p>
                     )}
                     {d.rejected.length ? (

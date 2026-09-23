@@ -10,6 +10,7 @@ import {
   createInitialState,
   reduceCourtState,
   startCourtSession,
+  type AudienceAction,
   type CourtModel,
   type CourtRulerView,
   type CourtSession,
@@ -115,6 +116,17 @@ export class CourtService {
       () => entry.session.submit(submission),
       () => entry.submitted.delete(submission.audienceId),
     );
+  }
+
+  async act(
+    id: string,
+    audienceId: string,
+    action: AudienceAction,
+  ): Promise<CourtSnapshot> {
+    const entry = await this.load(id);
+    if (entry.pending || entry.status !== "waiting")
+      throw new Error("This audience is not open");
+    return this.execute(entry, () => entry.session.act(audienceId, action));
   }
 
   async retry(id: string): Promise<CourtSnapshot> {

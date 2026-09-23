@@ -36,8 +36,26 @@ const yanDraftsAll: Script = (input) => ({
   })),
 });
 
+const lvPresentsAll: Script = (input) => ({
+  inner: "都呈上去。",
+  dispositions: (
+    (input.inbox as { documentId: string }[] | undefined) ?? []
+  ).map((d) => ({ documentId: d.documentId, action: "present" })),
+});
+
+const luRoutes =
+  (channel: string): Script =>
+  (input) => ({
+    inner: "照实转呈。",
+    routes: (
+      (input.reportsAwaitingRouting as { reportId: string }[] | undefined) ?? []
+    ).map((r) => ({ reportId: r.reportId, channel })),
+  });
+
 const defaultScripts: Record<string, Script> = {
   [ids.yanSong]: yanDraftsAll,
+  [ids.lvFang]: lvPresentsAll,
+  [ids.luBing]: luRoutes("directorate"),
   [ids.zheng]: (_input, count) =>
     count === 1
       ? {
@@ -113,7 +131,7 @@ const followAll: Strategy = (view) => ({
   specials: [],
 });
 
-async function play(session: CourtSession, strategy: Strategy, limit = 40) {
+async function play(session: CourtSession, strategy: Strategy, limit = 120) {
   for (let i = 0; !session.complete && i < limit; i += 1) {
     const view = session.view;
     if (view.phase !== "audience") throw new Error("Expected an audience");
@@ -237,13 +255,14 @@ describe("court session", () => {
       language: "zh-CN",
       model,
     });
-    const first = session.view;
-    await expect(
-      session.submit({
-        audienceId: first.audience!.id,
-        ...followAll(first, 0),
-      }),
-    ).rejects.toThrow("provider hiccup");
+    let failure: unknown;
+    for (let i = 0; i < 20 && !failure; i += 1) {
+      const view = session.view;
+      await session
+        .submit({ audienceId: view.audience!.id, ...followAll(view, i) })
+        .catch((error: unknown) => (failure = error));
+    }
+    expect(String(failure)).toContain("provider hiccup");
     const before = calls.length;
     await session.retry();
     const retried = calls.slice(before).map((c) => c.decisionEpisodeId);
@@ -300,11 +319,13 @@ describe("court session", () => {
       language: "zh-CN",
       model,
     });
-    const first = session.view;
-    await session.submit({
-      audienceId: first.audience!.id,
-      ...followAll(first, 0),
-    });
+    for (let i = 0; i < 20 && truncated; i += 1) {
+      const view = session.view;
+      await session.submit({
+        audienceId: view.audience!.id,
+        ...followAll(view, i),
+      });
+    }
     expect(truncated).toBe(false);
     expect(session.state.decisions.some((d) => d.actorId === ids.zheng)).toBe(
       true,
@@ -517,6 +538,292 @@ describe("court session", () => {
     expect(report.text).toContain(
       `官府累计放赈${jiande.reliefDelivered}万石；沈一石以粮换田，出粮5万石。`,
     );
+  });
+
+  it("lets Lü Fang return, proxy, summarise and hold papers within each party's knowledge", async () => {
+    const lvGatekeeper: Script = (input) => {
+      const inbox =
+        (input.inbox as {
+          documentId: string;
+          kind: string;
+          subject: string;
+          returnedBefore?: number;
+        }[]) ?? [];
+      return {
+        inner: "有的呈，有的压。",
+        ...(inbox.length ? { report: "浙江诸事，奴婢都盯着。" } : {}),
+        dispositions: inbox.map((d) =>
+          d.subject === "奉旨督办改稻为桑疏"
+            ? d.returnedBefore
+              ? { documentId: d.documentId, action: "proxy" }
+              : { documentId: d.documentId, action: "return", text: "再议" }
+            : d.kind === "secret_memorial"
+              ? {
+                  documentId: d.documentId,
+                  action: "summarize",
+                  text: "杨金水说浙江诸事尚顺。",
+                }
+              : d.subject.includes("军饷")
+                ? { documentId: d.documentId, action: "hold" }
+                : { documentId: d.documentId, action: "present" },
+        ),
+      };
+    };
+    const scripts: Record<string, Script> = {
+      ...defaultScripts,
+      [ids.lvFang]: lvGatekeeper,
+      [ids.hu]: (_input, count) =>
+        count === 1
+          ? {
+              inner: "再催一次军饷。",
+              documents: [
+                { kind: "memorial", subject: "再请军饷疏", text: "军中缺饷。" },
+              ],
+            }
+          : { inner: "军务要紧。" },
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    const oral: string[] = [];
+    let folded: { id: string; summary?: string; text: string } | undefined;
+    for (let i = 0; !session.complete && i < 120; i += 1) {
+      const view = session.view;
+      oral.push(...view.audience!.oralReports);
+      const summarised = view.audience!.documents.find((d) => d.folded);
+      if (summarised && !folded) {
+        folded = summarised;
+        await session.act(view.audience!.id, {
+          type: "reveal",
+          documentId: summarised.id,
+        });
+        const revealed = session.view.audience!.documents.find(
+          (d) => d.id === summarised.id,
+        )!;
+        expect(revealed.folded).toBe(false);
+        expect(revealed.text).toBe("奴婢谨奏：浙江诸事尚顺。");
+      }
+      await session.submit({
+        audienceId: view.audience!.id,
+        ...followAll(session.view, i),
+      });
+    }
+    const state = session.state;
+    expect(folded).toMatchObject({
+      summary: "杨金水说浙江诸事尚顺。",
+      text: "",
+    });
+    expect(oral).toContain("浙江诸事，奴婢都盯着。");
+
+    const zheng = Object.values(state.documents).find(
+      (d) => d.subject === "奉旨督办改稻为桑疏",
+    )!;
+    expect(zheng.returns).toHaveLength(1);
+    expect(zheng.rescript?.disposition).toBe("proxy");
+    expect(zheng.onDeskAt).toBeUndefined();
+    const proxied = session.view.edicts.find((e) => e.proxy)!;
+    expect(proxied.subject).toContain("奉旨督办改稻为桑疏");
+    const yanSaw = state.observations.filter((o) => o.actorId === ids.yanSong);
+    expect(
+      yanSaw.find((o) => o.kind === "returned_by_directorate")?.payload,
+    ).toMatchObject({ subject: "奉旨督办改稻为桑疏", note: "再议" });
+    expect(JSON.stringify(yanSaw)).toContain('"disposition":"follow_draft"');
+    expect(JSON.stringify(yanSaw)).not.toContain("proxy");
+
+    const held = Object.values(state.documents).find(
+      (d) => d.subject === "再请军饷疏",
+    )!;
+    expect(held.directorate?.action).toBe("hold");
+    expect(held.readyForRulerAt).toBeUndefined();
+    expect(JSON.stringify(yanSaw)).not.toContain("再请军饷疏");
+    expect(
+      state.observations.some(
+        (o) => o.actorId === ids.hu && o.kind === "no_reply",
+      ),
+    ).toBe(true);
+    expect(
+      state.observations.some(
+        (o) => o.actorId === ids.lvFang && o.kind === "original_called_for",
+      ),
+    ).toBe(true);
+    const lvInputs = state.decisions
+      .filter((d) => d.actorId === ids.lvFang)
+      .map((d) => JSON.stringify(d.input));
+    expect(lvInputs.some((i) => i.includes('"returnedBefore":1'))).toBe(true);
+  });
+
+  it("routes a field report through Lu Bing, honours seclusion and interruptions, and lets the emperor talk to Lü", async () => {
+    let lvInterrupted = false;
+    const scripts: Record<string, Script> = {
+      ...defaultScripts,
+      [ids.lvFang]: (input) => {
+        if (input.emperorSays !== undefined)
+          return {
+            inner: "皇上问起，就把压着的也呈上。",
+            reply: `奴婢遵旨：${String(input.emperorSays)}`,
+            dispositions: ((input.held as { documentId: string }[]) ?? []).map(
+              (d) => ({ documentId: d.documentId, action: "present" }),
+            ),
+          };
+        const inbox =
+          (input.inbox as { documentId: string; from: string }[]) ?? [];
+        const fromZheng = inbox.some((d) => d.from === "郑泌昌");
+        const interrupt = fromZheng && !lvInterrupted;
+        if (interrupt) lvInterrupted = true;
+        return {
+          inner: "先压一压郑泌昌的本子。",
+          dispositions: inbox.map((d) => ({
+            documentId: d.documentId,
+            action: d.from === "郑泌昌" ? "hold" : "present",
+          })),
+          ...(interrupt ? { interrupt: { reason: "浙江有本章到了。" } } : {}),
+        };
+      },
+      [ids.luBing]: (input) => ({
+        inner: "此事须当面奏明。",
+        routes: (
+          (input.reportsAwaitingRouting as { reportId: string }[]) ?? []
+        ).map((r) => ({
+          reportId: r.reportId,
+          channel: "direct",
+          note: "臣陆炳谨呈。",
+          interrupt: true,
+        })),
+      }),
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    const first = session.view;
+    await session.submit({
+      audienceId: first.audience!.id,
+      ...followAll(first, 0),
+      specials: [
+        {
+          edict: {
+            kind: "order_inquiry",
+            params: { countyId: "jiande", agent: "jinyiwei" },
+          },
+        },
+      ],
+      seclusionDays: 30,
+    });
+    expect(session.view.secludedUntil).toBe(at(30, 6));
+
+    const lvCall = session.view;
+    expect(lvCall.audience!.interruption).toMatchObject({
+      byName: "吕芳",
+      admitted: false,
+    });
+    expect(lvCall.audience!.documents).toHaveLength(0);
+    await expect(
+      session.submit({
+        audienceId: lvCall.audience!.id,
+        items: [],
+        specials: [],
+      }),
+    ).rejects.toThrow("Admit or decline");
+    await session.submit({
+      audienceId: lvCall.audience!.id,
+      items: [],
+      specials: [],
+      decline: true,
+    });
+    expect(
+      session.state.observations.some(
+        (o) => o.actorId === ids.lvFang && o.kind === "interruption_declined",
+      ),
+    ).toBe(true);
+
+    const luCall = session.view;
+    expect(luCall.time).toBeLessThan(at(30, 6));
+    expect(luCall.audience!.interruption?.byName).toBe("陆炳");
+    await session.act(luCall.audience!.id, { type: "admit" });
+    const desk = session.view.audience!;
+    const report = desk.documents.find((d) => d.kind === "report")!;
+    expect(report).toMatchObject({ direct: true, luBingNote: "臣陆炳谨呈。" });
+    expect(session.view.secludedUntil).toBeUndefined();
+    expect(desk.documents.some((d) => d.fromName === "郑泌昌")).toBe(false);
+
+    const lvBefore = session.state.actors[ids.lvFang]!.lastDecisionAt;
+    for (const message of ["郑泌昌的本子呢？", "都拿来。", "还有吗？"])
+      await session.act(desk.id, { type: "converse", message });
+    await expect(
+      session.act(desk.id, { type: "converse", message: "再说一句。" }),
+    ).rejects.toThrow("No more rounds");
+    const talked = session.view.audience!;
+    expect(talked.roundsLeft).toBe(0);
+    expect(talked.conversation[1]).toEqual({
+      role: "lv",
+      text: "奴婢遵旨：郑泌昌的本子呢？",
+    });
+    expect(talked.documents.some((d) => d.fromName === "郑泌昌")).toBe(true);
+    expect(session.state.actors[ids.lvFang]!.lastDecisionAt).toBe(lvBefore);
+
+    await play(session, followAll);
+    const state = session.state;
+    expect(
+      state.observations.some(
+        (o) => o.actorId === ids.lvFang && o.kind === "direct_audience",
+      ),
+    ).toBe(true);
+    const reportDoc = state.documents[report.id]!;
+    for (const d of state.decisions.filter((d) => d.actorId === ids.lvFang))
+      expect(JSON.stringify(d.input)).not.toContain(reportDoc.text);
+    expect(
+      state.decisions.some(
+        (d) =>
+          d.actorId === ids.luBing &&
+          JSON.stringify(d.input).includes(reportDoc.text),
+      ),
+    ).toBe(true);
+    expect(reportDoc.sentAt).toBe(reportDoc.arrivals[ids.luBing]! - days(6));
+    expect(
+      replay(
+        createInitialState(runId),
+        await session.records(),
+        reduceCourtState,
+      ),
+    ).toEqual(state);
+  });
+
+  it("does not let Lu Bing sit on a field report", async () => {
+    const scripts: Record<string, Script> = {
+      ...defaultScripts,
+      [ids.luBing]: () => ({ inner: "先放一放。" }),
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    let failure: unknown;
+    for (let i = 0; i < 60 && !failure; i += 1) {
+      const view = session.view;
+      await session
+        .submit({
+          audienceId: view.audience!.id,
+          ...followAll(view, i),
+          specials:
+            i === 0
+              ? [
+                  {
+                    edict: {
+                      kind: "order_inquiry",
+                      params: { countyId: "jiande", agent: "jinyiwei" },
+                    },
+                  },
+                ]
+              : [],
+        })
+        .catch((error: unknown) => (failure = error));
+    }
+    expect(String(failure)).toContain("did not route");
+    expect(session.failed).toBe(true);
   });
 
   it("rejects submissions that reference documents off the desk or decide the policy twice", async () => {

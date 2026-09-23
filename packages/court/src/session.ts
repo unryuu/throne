@@ -1,11 +1,17 @@
 import type { SimulationRecord } from "@throne/shared-types";
 import { InMemoryEventStore, SimulationKernel } from "@throne/sim-core";
 import { createInitialState, firstWorldCheckAt } from "./jiajing.ts";
-import { createCourtModel, type RescriptSubmission } from "./model.ts";
+import {
+  createCourtModel,
+  type AudienceAction,
+  type RescriptSubmission,
+} from "./model.ts";
 import { parseCourtDecision, type CourtModel } from "./npc.ts";
 import type { CourtState } from "./types.ts";
 import {
+  audienceActionProblem,
   courtRulerView,
+  parseAction,
   parseSubmission,
   submissionProblem,
   type CourtRulerView,
@@ -17,11 +23,20 @@ export type CourtSession = {
   /** True after a step failed; the queue still holds the failed batch. */
   readonly failed: boolean;
   submit(submission: RescriptSubmission): Promise<void>;
+  /** Talk to Lü Fang, call for an original, or admit an interruption. */
+  act(audienceId: string, action: AudienceAction): Promise<void>;
   retry(): Promise<void>;
   records(): Promise<readonly SimulationRecord[]>;
   /** Full objective state; callers must only expose it after completion. */
   readonly state: CourtState;
 };
+
+const playerEvents = [
+  "court.rescript",
+  "court.converse",
+  "court.reveal",
+  "court.admit",
+];
 
 export async function startCourtSession(options: {
   runId: string;
@@ -38,7 +53,8 @@ export async function startCourtSession(options: {
     for (let attempt = 1; ; attempt += 1) {
       const text = await options.model(request);
       try {
-        parseCourtDecision(text);
+        const decision = parseCourtDecision(text);
+        request.check?.(decision);
       } catch (error) {
         if (attempt < 2) continue;
         throw error;
@@ -66,7 +82,7 @@ export async function startCourtSession(options: {
   } else {
     kernel = new SimulationKernel(initial, domain, store, options.runId);
     for (const [eventType, scheduledAt] of [
-      ["court.audience_open", initial.audienceScheduledAt!],
+      ["court.audience_open", initial.nextAudienceAt!],
       ["world.flood", initial.flood.at],
       ["world.check", firstWorldCheckAt],
       ["world.end", initial.endsAt],
@@ -85,7 +101,7 @@ export async function startCourtSession(options: {
       : (options.records ?? []).some(
           (r) =>
             r.kind === "scheduled" &&
-            r.event.eventType === "court.rescript" &&
+            playerEvents.includes(r.event.eventType) &&
             !consumed.has(r.event.id),
         );
   const advance = async (before?: () => Promise<unknown>) => {
@@ -125,6 +141,25 @@ export async function startCourtSession(options: {
           eventType: "court.rescript",
           scheduledAt: kernel.time,
           payload: { submission: structuredClone(submission) as never },
+        }),
+      );
+    },
+    async act(audienceId, input) {
+      if (busy) throw new Error("The court is already advancing");
+      const action = parseAction(input);
+      const problem = audienceActionProblem(kernel.state, audienceId, action);
+      if (problem) throw new Error(problem);
+      await advance(() =>
+        kernel.schedule({
+          eventType:
+            action.type === "converse"
+              ? "court.converse"
+              : `court.${action.type}`,
+          scheduledAt: kernel.time,
+          payload:
+            action.type === "converse"
+              ? { message: action.message }
+              : { action: structuredClone(action) as never },
         }),
       );
     },
