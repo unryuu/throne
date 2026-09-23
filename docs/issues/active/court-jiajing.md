@@ -1,6 +1,6 @@
 # FEAT-0006：嘉靖朝·改稻为桑
 
-状态：实现中。方向见 [DESIGN §11](../../DESIGN.md#11-方向长期统治与嘉靖--崇祯模拟器)，规则见 [ADR 0006](../../architecture/0006-court-memorials.md)。
+状态：首个可玩版本完成，首次实玩见 [归档](../archive/court-playtest-2026-09-23.md)；后续切片见 [HANDOFF](../../../HANDOFF.md)。方向见 [DESIGN §11](../../DESIGN.md#11-方向长期统治与嘉靖--崇祯模拟器)，规则见 [ADR 0006](../../architecture/0006-court-memorials.md)。
 
 动机：赵统领二选一无法体现 LLM 的价值，也离“长期统治”太远。需要一个小朝廷骨架，让奏疏在朝廷中流转，人物自己写文书并在引擎许可范围内行动。
 
