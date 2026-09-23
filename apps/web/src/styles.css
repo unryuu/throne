@@ -1541,3 +1541,170 @@ article p {
     padding: 26px;
   }
 }
+
+/* Court: memorials, drafts and vermilion rescripts */
+.court-play {
+  max-width: 820px;
+}
+.court-clock {
+  margin-top: 28px;
+}
+.court-running {
+  color: #bd9a68;
+}
+.court-desk h3 {
+  margin: 32px 0 18px;
+  font-size: 1.5rem;
+}
+.court-doc {
+  margin: 0 0 22px;
+  padding: 22px 24px;
+  border: 1px solid #3a3b31;
+  border-left: 3px solid #a9854b;
+  background: #1d1e17;
+  list-style: none;
+}
+.court-doc-secret_memorial {
+  border-left-color: #7b6ba8;
+}
+.court-doc-report {
+  border-left-color: #5d8a86;
+}
+.court-subject {
+  margin: 4px 0 12px;
+  font-size: 1.12rem;
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+}
+.court-text {
+  margin: 0;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+}
+.court-draft {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px dashed #4a4b3f;
+  color: #cfc9b7;
+}
+.court-draft span,
+.court-vermilion span,
+.court-edict span,
+.court-layer > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #858274;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+}
+.court-draft p {
+  margin: 6px 0 0;
+  line-height: 1.7;
+}
+.court-dispositions {
+  margin-top: 16px;
+  width: fit-content;
+}
+.court-edict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.court-edict select,
+.court-play textarea {
+  padding: 7px 9px;
+  border: 1px solid #45463b;
+  color: #e8e3d3;
+  background: #15160f;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.court-vermilion {
+  display: block;
+  margin-top: 14px;
+}
+.court-play textarea {
+  width: 100%;
+  min-height: 64px;
+  color: #e0735b;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+}
+.court-rescript {
+  margin: 12px 0 0;
+  color: #e0735b;
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+}
+.court-specials {
+  margin: 28px 0 8px;
+}
+.court-specials h4 {
+  margin: 0 0 10px;
+}
+.court-special {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #3a3b31;
+}
+.court-link {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  color: #bd9a68;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.court-submit {
+  margin-top: 12px;
+}
+.court-archive {
+  margin-top: 40px;
+}
+.court-archive summary {
+  margin: 14px 0;
+  cursor: pointer;
+  color: #bd9a68;
+}
+.court-review section {
+  margin-top: 30px;
+}
+.court-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.court-table th,
+.court-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #34352d;
+  text-align: left;
+}
+.court-decision {
+  margin: 18px 0 26px;
+  padding-left: 16px;
+  border-left: 1px solid #45463b;
+}
+.court-layer {
+  margin-top: 12px;
+}
+.court-layer p {
+  margin: 4px 0;
+  line-height: 1.7;
+}
+.court-thought p {
+  color: #d9c39a;
+  font-style: italic;
+}
+@media (max-width: 640px) {
+  .court-doc {
+    padding: 16px;
+  }
+  .court-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

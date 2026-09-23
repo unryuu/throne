@@ -45,10 +45,12 @@ import {
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { LivePlay } from "./live-play.tsx";
+import { CourtPlay } from "./court-play.tsx";
 import { AppointmentView } from "./appointment-view.tsx";
 import { RunFailure, reportRunError } from "./run-failure.tsx";
 
 type ScenarioKey =
+  | "court"
   | "play"
   | "live"
   | "appointment"
@@ -83,7 +85,7 @@ function App() {
   const [playerResolving, setPlayerResolving] = useState(false);
   const [playerError, setPlayerError] = useState<Error>();
   const [playerSessionNumber, setPlayerSessionNumber] = useState(1);
-  const [scenario, setScenario] = useState<ScenarioKey>("play");
+  const [scenario, setScenario] = useState<ScenarioKey>("court");
   const [view, setView] = useState<"ruler" | "debug">("ruler");
   const [moment, setMoment] = useState<"before" | "after">("before");
 
@@ -166,21 +168,23 @@ function App() {
   const revision = scenario === "revision";
   const conflict = scenario === "conflict";
   const scenarioTitle =
-    scenario === "live"
-      ? t("live.title")
-      : appointment
-        ? t("appointment.title")
-        : playing
-          ? t("scenario.play.title")
-          : promotion
-            ? t("scenario.promotion.title")
-            : control
-              ? t("scenario.control.title")
-              : revision
-                ? t("scenario.revision.short")
-                : conflict
-                  ? t("scenario.conflict.short")
-                  : t("scenario.partial.short");
+    scenario === "court"
+      ? t("court.title")
+      : scenario === "live"
+        ? t("live.title")
+        : appointment
+          ? t("appointment.title")
+          : playing
+            ? t("scenario.play.title")
+            : promotion
+              ? t("scenario.promotion.title")
+              : control
+                ? t("scenario.control.title")
+                : revision
+                  ? t("scenario.revision.short")
+                  : conflict
+                    ? t("scenario.conflict.short")
+                    : t("scenario.partial.short");
   const momentLabels = appointment
     ? [t("appointment.before"), t("appointment.after")]
     : promotion
@@ -219,6 +223,13 @@ function App() {
         </header>
 
         <nav className="scenario-picker" aria-label={t("app.scenarioPicker")}>
+          <button
+            className={scenario === "court" ? "active" : ""}
+            onClick={() => chooseScenario("court")}
+          >
+            <span>{t("court.badge")}</span>
+            {t("court.short")}
+          </button>
           <button
             className={scenario === "live" ? "active" : ""}
             onClick={() => chooseScenario("live")}
@@ -271,6 +282,7 @@ function App() {
           <button
             className={
               scenario !== "live" &&
+              scenario !== "court" &&
               !playing &&
               !appointment &&
               !promotion &&
@@ -295,8 +307,12 @@ function App() {
             </div>
             <div
               className="scenario-controls"
-              hidden={scenario === "live"}
-              style={scenario === "live" ? { display: "none" } : undefined}
+              hidden={scenario === "live" || scenario === "court"}
+              style={
+                scenario === "live" || scenario === "court"
+                  ? { display: "none" }
+                  : undefined
+              }
             >
               {!playing ? (
                 <div className="view-switch" aria-label={t("app.momentPicker")}>
@@ -335,7 +351,9 @@ function App() {
             </div>
           </div>
 
-          {scenario === "live" ? (
+          {scenario === "court" ? (
+            <CourtPlay locale={locale} t={t} />
+          ) : scenario === "live" ? (
             <LivePlay locale={locale} t={t} />
           ) : playerError ? (
             <RunFailure
