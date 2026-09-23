@@ -197,12 +197,13 @@ export function createLiveTextModel(
       throw new Error("Actor instructions must not be empty");
     const result = await callLive(root, onTrace, {
       decisionEpisodeId: request.decisionEpisodeId,
-      maxTokens: 8192,
+      maxTokens: 32768,
       systemPrompt: request.systemPrompt,
       run: (harness) =>
         harness.complete(
           request.prompt,
           `throne-${createHash("sha256").update(request.sessionKey).digest("hex").slice(0, 24)}`,
+          request.decisionEpisodeId,
         ),
     });
     return result.finalResponse;

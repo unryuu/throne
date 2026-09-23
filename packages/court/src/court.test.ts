@@ -50,7 +50,7 @@ const defaultScripts: Record<string, Script> = {
             },
             {
               kind: "letter",
-              to: ids.yang,
+              to: [ids.yang, "胡宗宪"],
               subject: "密函",
               text: "端午之后田价自落。",
             },
@@ -207,6 +207,10 @@ describe("court session", () => {
     expect(secret.arrivals[ids.ruler]).toBe(secret.sentAt + days(5));
     expect(session.view.archive.some((d) => d.id === secret.id)).toBe(true);
     expect(JSON.stringify(session.view)).not.toContain("端午之后田价自落");
+    const letter = Object.values(state.documents).find(
+      (d) => d.kind === "letter",
+    )!;
+    expect(letter.toIds).toEqual([ids.yang, ids.hu]);
 
     const records = await session.records();
     const callCount = calls.length;
@@ -279,6 +283,32 @@ describe("court session", () => {
     await play(resumed, followAll);
     expect(resumed.state).toEqual(uninterrupted.state);
     expect(await resumed.records()).toEqual(await uninterrupted.records());
+  });
+
+  it("re-asks once when a reply is malformed instead of caching it", async () => {
+    const { model: base } = scriptedModel(defaultScripts);
+    let truncated = true;
+    const model: CourtModel = async (request) => {
+      if (truncated && request.decisionEpisodeId === "court:zheng-bichang:1") {
+        truncated = false;
+        return '{"inner":"写到一半';
+      }
+      return base(request);
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model,
+    });
+    const first = session.view;
+    await session.submit({
+      audienceId: first.audience!.id,
+      ...followAll(first, 0),
+    });
+    expect(truncated).toBe(false);
+    expect(session.state.decisions.some((d) => d.actorId === ids.zheng)).toBe(
+      true,
+    );
   });
 
   it("tells an author when a memorial is held, and arrest hands the province to Hu", async () => {

@@ -1,15 +1,13 @@
 # Status
 
-The prototype includes seven mechanism demonstrations, an offline ruler decision loop, and a two-decision live DeepSeek short game. Chinese is the default; display language can switch to English. The web's "真实 NPC / Live NPC" entry uses a loopback-only local service, explicit thinking/high, and the pinned Harness adapter with shell tools and raw session persistence disabled.
+Direction changed on 2026-09-23: the project now studies a long reign ("Jiajing / Chongzhen simulator"), fun-first with real names. See [DESIGN §11](docs/DESIGN.md#11-方向长期统治与嘉靖--崇祯模拟器).
 
-The player issues a decree, receives its delayed reports, then maintains the reported deployment or sends a new decree after fresh intelligence. The same Commander Zhao retains his received orders, decisions and actual actions. Both rounds share one world and event log; later success does not erase earlier damage. The ruler timeline contains only received reports and their own orders. All private NPC context is withheld until the whole game ends. Rules: [ADR 0005](docs/architecture/0005-continuous-crisis.md).
+The default web tab is now the Jiajing court (FEAT-0006, in progress): the player is the emperor. Yan Song drafts rescripts. Zheng Bichang, Hu Zongxian and Yang Jinshui are live DeepSeek actors who each think, write and act separately. Paddy-to-mulberry, the Duanwu flood, dike sabotage, relief, riots and inquiries are resolved by the engine. Runs save after every step under gitignored `runs/court/` and resume after a server restart. The reign-end review shows thought / word / deed / truth side by side. Rules: [ADR 0006](docs/architecture/0006-court-memorials.md).
 
-Two continuous games were played through the browser: palace → east protected both sites; east → maintain east preserved the earlier palace archive loss while protecting the warehouses. All four calls obeyed and observed thinking/high, taking about 2.9–5.1 seconds each. The second inputs included distinct histories, but these small trials do not establish calibrated political behavior or causal use of every memory. Details: [playtest and acceptance](docs/issues/archive/continuous-crisis.md).
+First live playtest is under way. Early observations: the three layers diverge the way we hoped; reports on the desk contradict each other. Fixes from the playtest: list recipients, reasoning hitting the 8K output cap (now 32K), and one automatic re-ask on malformed JSON.
 
-Failures pause the current decision; retry does not regenerate earlier decisions or reissue decrees. Episode-specific submissions prevent stale requests advancing the next round. Completed version 2 runs persist in gitignored runs/ and replay without model calls after server restart. Version 1 single-round records remain readable/replayable. Unfinished sessions are still in memory and are lost on server restart.
+The seven mechanism demos and the two-decree live commander remain available as earlier tabs.
 
-Office/appointment rules and the earlier scenes remain available. Actual model calls are opt-in; pnpm demo and the automated tests use no provider credit. Credentials are never sent to the browser or committed. The SDK does not expose independently verifiable returned model identity, so those metadata fields remain null.
+Checks: 81 tests pass; types, formatting and build pass (the chunk-size advisory is non-blocking).
 
-Current checks: 72 tests pass; types, formatting and production build pass. Build emits a non-blocking frontend chunk-size advisory. Documentation routing is in [docs/README.md](docs/README.md); completed investigations are archived, current rules stay in architecture/.
-
-Next candidate: controlled behavior comparisons across varied evidence and relationships, plus more natural brief explanations. No full campaign, automatic relationship evolution or mixed-provider implementation has started.
+Next: finish the playtest record, then decide on the pacing of frequent audiences, how the Directorate (Lü Fang) filters memorials, and adding Hai Rui / Yan Shifan as actors.

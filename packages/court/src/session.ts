@@ -2,7 +2,7 @@ import type { SimulationRecord } from "@throne/shared-types";
 import { InMemoryEventStore, SimulationKernel } from "@throne/sim-core";
 import { createInitialState, firstWorldCheckAt } from "./jiajing.ts";
 import { createCourtModel, type RescriptSubmission } from "./model.ts";
-import type { CourtModel } from "./npc.ts";
+import { parseCourtDecision, type CourtModel } from "./npc.ts";
 import type { CourtState } from "./types.ts";
 import {
   courtRulerView,
@@ -33,9 +33,18 @@ export async function startCourtSession(options: {
   const model: CourtModel = async (request) => {
     const cached = memo.get(request.decisionEpisodeId);
     if (cached !== undefined) return cached;
-    const text = await options.model(request);
-    memo.set(request.decisionEpisodeId, text);
-    return text;
+    // One re-ask on malformed output; provider errors surface immediately.
+    for (let attempt = 1; ; attempt += 1) {
+      const text = await options.model(request);
+      try {
+        parseCourtDecision(text);
+      } catch (error) {
+        if (attempt < 2) continue;
+        throw error;
+      }
+      memo.set(request.decisionEpisodeId, text);
+      return text;
+    }
   };
   const initial = createInitialState(options.runId);
   const domain = createCourtModel({

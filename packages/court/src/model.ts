@@ -771,42 +771,65 @@ function applyDecision(
       (a) => a.id === to || (to !== undefined && a.name === to),
     );
   const decisionEpisodeId = String(input.decisionEpisodeId);
-  for (const d of decision.documents) {
+  for (const [index, d] of decision.documents.entries()) {
+    if (index >= 4) {
+      rejected.push({
+        type: "document",
+        subject: d.subject ?? d.text.slice(0, 16),
+        reason: "一次最多发四份文书",
+      });
+      continue;
+    }
     const kind = d.kind as CourtDocument["kind"];
     if (!allowedKinds.includes(kind)) {
       rejected.push({
         type: "document",
-        subject: d.subject,
+        subject: d.subject ?? d.text.slice(0, 16),
         reason: "你没有这种文书渠道",
       });
       continue;
     }
-    const recipient = kind === "letter" ? findActor(d.to) : undefined;
-    if (
-      kind === "letter" &&
-      (!recipient || recipient.id === actorId || recipient.id === ids.ruler)
-    ) {
-      rejected.push({
-        type: "document",
-        subject: d.subject,
-        reason: "收信人不明",
-      });
+    const recipients =
+      kind === "letter"
+        ? [
+            ...new Set(
+              (Array.isArray(d.to) ? d.to : [d.to])
+                .map((to) => findActor(to))
+                .filter(
+                  (a): a is CourtActor =>
+                    a !== undefined && a.id !== actorId && a.id !== ids.ruler,
+                )
+                .map((a) => a.id),
+            ),
+          ]
+        : [ids.ruler];
+    const subject = d.subject?.trim() || d.text.slice(0, 16);
+    if (!recipients.length) {
+      rejected.push({ type: "document", subject, reason: "收信人不明" });
       continue;
     }
     documents.push({
       id: nextDocumentId(ctx.state, documents.length),
       kind,
       fromId: actorId,
-      toIds: [recipient?.id ?? ids.ruler],
-      subject: d.subject,
+      toIds: recipients,
+      subject,
       text: d.text,
       decisionEpisodeId,
     });
   }
   const actions: CourtAction[] = [];
   const gaps: PrimitiveGap[] = [];
-  for (const a of decision.actions) {
+  for (const [index, a] of decision.actions.entries()) {
     const parameters = j(a.parameters);
+    if (index >= 3) {
+      rejected.push({
+        type: "action",
+        capabilityId: a.capabilityId,
+        reason: "一次最多做三件事",
+      });
+      continue;
+    }
     if (!(a.capabilityId in capabilitySpecs)) {
       gaps.push({
         id: `gap-${ctx.state.gaps.length + gaps.length}`,

@@ -91,8 +91,16 @@ export class DeepSeekHarnessDecisionPolicy
   async complete(
     prompt: string,
     sessionId: string,
+    decisionEpisodeId: string,
   ): Promise<{ finalResponse: string; events: readonly unknown[] }> {
     const result = await this.#harness.run(prompt, { sessionId });
+    await this.#onTrace?.({
+      decisionEpisodeId,
+      sessionId: result.sessionId,
+      finalResponse: result.finalResponse,
+      events: result.events,
+      notifications: result.notifications,
+    });
     return { finalResponse: result.finalResponse, events: result.events };
   }
 
