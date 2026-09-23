@@ -375,6 +375,20 @@ export function buildNpcInput(
             ),
           })),
           dispositionOptions: directorateActions,
+          // The Directorate writes out every vermilion rescript, so it knows what has been issued.
+          edictsIssued: Object.values(state.documents)
+            .filter((d) => d.kind === "edict")
+            .slice(-15)
+            .map((d) => ({
+              at: formatCourtTime(d.sentAt, language),
+              subject: d.subject,
+              to: d.toIds.map(name),
+              text: d.text,
+              ...(d.replyToId &&
+              state.documents[d.replyToId]?.rescript?.disposition === "proxy"
+                ? { byDirectorate: true }
+                : {}),
+            })),
         }
       : {}),
     ...(actorId === ids.luBing

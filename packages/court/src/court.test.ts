@@ -656,6 +656,8 @@ describe("court session", () => {
       .filter((d) => d.actorId === ids.lvFang)
       .map((d) => JSON.stringify(d.input));
     expect(lvInputs.some((i) => i.includes('"returnedBefore":1'))).toBe(true);
+    expect(lvInputs.at(-1)).toContain("edictsIssued");
+    expect(lvInputs.at(-1)).toContain("朱批：请于浙江改稻为桑以裕国用疏");
   });
 
   it("routes a field report through Lu Bing, honours seclusion and interruptions, and lets the emperor talk to Lü", async () => {
