@@ -24,6 +24,15 @@
       "@throne/agent-runtime/policy": [
         "./packages/agent-runtime/src/policy.ts"
       ],
+      "@throne/agent-runtime/bribe": [
+        "./packages/agent-runtime/src/bribe-policy.ts"
+      ],
+      "@throne/agent-runtime/action": [
+        "./packages/agent-runtime/src/actor-action.ts"
+      ],
+      "@throne/agent-runtime/official": [
+        "./packages/agent-runtime/src/official-policy.ts"
+      ],
       "@throne/localization": ["./packages/localization/src/index.ts"],
       "@throne/scenario-mvp": ["./packages/scenario-mvp/src/index.ts"]
     }

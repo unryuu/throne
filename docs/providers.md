@@ -29,6 +29,7 @@ Token counts are comparable only within the same provider and probe shape. They 
 4. Persist structured decisions and concise rationales, not raw reasoning or chain-of-thought.
 5. Validate every decision against `ActorDecisionOutput` before it can produce an intent.
 6. Keep a regression probe for role takeover, coding-agent identity leakage, and unexpectedly large fixed input.
+7. Extend the regression probe to political-actor decisions (bribery, deception, disobedience): verify that non-empty actor instructions displace any assistant identity, that an offered payment is weighed rather than refused by default, and that acceptance tracks the structured incentives instead of model politeness. The bribe adapter rejects empty instructions locally (see `packages/agent-runtime/src/bribe-policy.ts`).
 
 For DeepSeek tool loops in thinking mode, `reasoning_content` must remain available transiently during the current tool loop and be passed back as required by the API. It is discarded after the decision episode rather than entering the simulation event log.
 
