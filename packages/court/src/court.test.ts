@@ -342,11 +342,35 @@ describe("court session", () => {
       language: "zh-CN",
       model: scriptedModel(scripts).model,
     });
-    await play(session, followAll);
+    let sent = false;
+    await play(session, (view, index) => {
+      const base = followAll(view, index);
+      if (sent || view.time < at(36)) return base;
+      sent = true;
+      const inquiry = {
+        kind: "order_inquiry" as const,
+        params: { countyId: "jiande", agent: "jinyiwei" },
+      };
+      return { ...base, specials: [{ edict: inquiry }] };
+    });
     const state = session.state;
     expect(state.counties.jiande.dikeSabotaged).toBe(false);
-    expect(state.counties.jiande.breach).not.toBe("sabotage");
+    expect(state.counties.jiande.breach).toBeUndefined();
     expect(state.evidence).toHaveLength(1);
+    const inquiryId = (await session.records()).flatMap((r) =>
+      r.kind === "scheduled" && r.event.eventType === "jinyiwei.arrive"
+        ? [String(r.event.payload.inquiryId)]
+        : [],
+    )[0];
+    const report = Object.values(state.documents).find(
+      (d) => d.fromId === ids.jinyiwei,
+    )!;
+    expect(report.text).toContain("大堤无恙");
+    expect(report.text).not.toContain("非天灾");
+    expect(report.text.includes("后已补修")).toBe(
+      roll(runId, `${inquiryId}:ev-0`) < 0.7,
+    );
+    expect(roll(runId, `${inquiryId}:ev-0`)).toBeLessThan(0.7);
   });
 
   it("tells an author when a memorial is held, and arrest hands the province to Hu", async () => {

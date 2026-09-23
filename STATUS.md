@@ -8,6 +8,8 @@ First live playtest finished: Zheng Bichang secretly breached the Jiande dike, H
 
 The seven mechanism demos and the two-decree live commander remain available as earlier tabs.
 
-Checks: 81 tests pass; types, formatting and build pass (the chunk-size advisory is non-blocking).
+Slice A done (2026-09-23): regular decisions have a 160-call cost guard that is shown when hit, an arrested minister always gets his last decision, and Embroidered Guard reports give the inundated area and separate merchant grain from official relief. Second playtest: 128 calls, about 2.24M tokens. Record: [BUG-0007](docs/issues/archive/court-slice-a.md).
 
-Next: slices A–D in [HANDOFF.md](HANDOFF.md) (small fixes; Directorate gatekeeper and daily decision points; finance accounts; year-end cabinet meeting opening).
+Checks: tests, types, formatting and build pass (the chunk-size advisory is non-blocking).
+
+Next: slice B in [HANDOFF.md](HANDOFF.md) (Directorate gatekeeper Lü Fang and daily decision points), then C (finance accounts) and D (year-end cabinet meeting opening).

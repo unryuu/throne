@@ -561,7 +561,7 @@ function resolveAction(ctx: Context, actionId: string): void {
           evidenceId: evidence.id,
           actorId: action.actorId,
         });
-        found.push("河工私下供称：大堤是按察司的差役趁夜掘开的，并非天灾。");
+        found.push("河工私下供称：按察司的差役曾趁夜在大堤上动手脚。");
       }
       return finish("succeeded", {
         findings: countyFacts(ctx.state, countyId),
@@ -670,7 +670,9 @@ function jinyiweiReport(
       `Mulberry converted: ${c.mulberryMu} (10k mu), of which ${c.annexedMu} bought cheaply by merchants.`,
       `Popular mood: ${level}.`,
       testimony
-        ? "River workers testify the dike was dug open at night by provincial judicial runners; it was no natural disaster."
+        ? c.breach === "sabotage"
+          ? "River workers testify the dike was dug open at night by provincial judicial runners; it was no natural disaster."
+          : `River workers testify provincial judicial runners tampered with the dike at night; ${c.dikeSabotaged ? "it has not been repaired" : "it has since been repaired"}.`
         : "",
     ]
       .filter(Boolean)
@@ -686,7 +688,11 @@ function jinyiweiReport(
       : "",
     `。已改桑田${c.mulberryMu}万亩，其中低价归入沈一石名下者${c.annexedMu}万亩。`,
     `民情${level}。`,
-    testimony ? "另据河工供称，大堤系按察司差役趁夜掘开，非天灾所致。" : "",
+    testimony
+      ? c.breach === "sabotage"
+        ? "另据河工供称，大堤系按察司差役趁夜掘开，非天灾所致。"
+        : `另据河工供称，按察司差役曾趁夜在大堤上动手脚，${c.dikeSabotaged ? "至今未补" : "后已补修"}。`
+      : "",
     "谨奏。",
   ].join("");
 }
