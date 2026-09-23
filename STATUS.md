@@ -10,6 +10,8 @@ The seven mechanism demos and the two-decree live commander remain available as 
 
 Slice A done (2026-09-23): regular decisions have a 160-call cost guard that is shown when hit, an arrested minister always gets his last decision, and Embroidered Guard reports give the inundated area and separate merchant grain from official relief. Second playtest: 128 calls, about 2.24M tokens. Record: [BUG-0007](docs/issues/archive/court-slice-a.md).
 
+Slice B done (2026-09-23): Lü Fang and Lu Bing are live. Every paper reaches the throne through Lü Fang, who presents, summarises, holds, endorses on the draft or returns it to the cabinet. Embroidered Guard reports go to Lu Bing, who either hands them to the Directorate or brings them in person. The emperor holds court daily at noon, can talk to Lü, and can go into seclusion. Rules: [ADR 0007](docs/architecture/0007-directorate-daily-court.md). Third playtest: 259 calls, about 4.65M tokens; the 240-decision cost guard ran out on day 73. Record: [FEAT-0007](docs/issues/archive/court-directorate.md).
+
 Checks: tests, types, formatting and build pass (the chunk-size advisory is non-blocking).
 
-Next: slice B in [HANDOFF.md](HANDOFF.md) (Directorate gatekeeper Lü Fang and daily decision points), then C (finance accounts) and D (year-end cabinet meeting opening).
+Next: the user decides the cost guard and how often Lü Fang is called; then slice C (finance accounts) and D (year-end cabinet meeting opening) in [HANDOFF.md](HANDOFF.md).
