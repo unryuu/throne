@@ -54,6 +54,8 @@ export type CourtRulerView = {
     readonly reprimandable: readonly { id: string; name: string }[];
     readonly policyDecided: boolean;
   };
+  /** Out-of-world: regular decisions the cost guard has stopped. */
+  readonly cappedWakes: number;
 };
 
 function documentView(
@@ -135,6 +137,7 @@ export function courtRulerView(
       reprimandable: named(reprimandableIds),
       policyDecided: state.policy.status !== "proposed",
     },
+    cappedWakes: state.counters.cappedWakes ?? 0,
   });
 }
 

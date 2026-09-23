@@ -223,6 +223,7 @@ export function countyFacts(state: CourtState, countyId: CountyId): JsonObject {
     county: c.name,
     paddyMu: c.paddyMu,
     mulberryMu: c.mulberryMu,
+    inundatedMu: c.inundatedMu,
     floodedMu: c.floodedMu,
     homeless: c.homeless,
     deaths: c.deaths,
@@ -230,6 +231,6 @@ export function countyFacts(state: CourtState, countyId: CountyId): JsonObject {
     unrest: c.unrest,
     riots: c.riots,
     dikeBreached: c.breach !== undefined,
-    unit: "田亩与灾民单位为万，死亡为人数，粮为万石，民怨0-1",
+    unit: "田亩与灾民单位为万，死亡为人数，粮为万石，民怨0-1；inundatedMu 为汛时受淹面积，floodedMu 为仍在百姓手里的淹田",
   };
 }

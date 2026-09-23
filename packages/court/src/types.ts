@@ -24,7 +24,10 @@ export type County = {
   readonly paddyMu: number;
   readonly mulberryMu: number;
   readonly annexedMu: number;
+  /** Waterlogged land still held by its owners; buying it reduces this. */
   readonly floodedMu: number;
+  /** Area inundated by the flood, fixed once the flood has passed. */
+  readonly inundatedMu: number;
   readonly dikeIntegrity: number;
   readonly dikeSabotaged: boolean;
   readonly breach?: "flood" | "sabotage";
@@ -32,7 +35,9 @@ export type County = {
   readonly homeless: number;
   readonly deaths: number;
   readonly reliefStock: number;
+  /** Official relief only: provincial granary and army grain. */
   readonly reliefDelivered: number;
+  readonly merchantGrainDelivered: number;
   readonly unrest: number;
   readonly lastRiotAt?: SimTime;
   readonly riots: number;
@@ -179,5 +184,7 @@ export type CourtState = {
   readonly gaps: readonly PrimitiveGap[];
   readonly counters: Readonly<Record<string, number>>;
   readonly endsAt: SimTime;
+  /** Cost guard on regular decisions; final decisions after dismissal are exempt. */
+  readonly decisionBudget: number;
   readonly summary?: JsonObject;
 };

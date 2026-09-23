@@ -397,6 +397,104 @@ describe("court session", () => {
     );
   });
 
+  it("stops regular decisions at the cost guard but still gives an arrested minister his last word", async () => {
+    const { model } = scriptedModel(defaultScripts);
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model,
+      decisionBudget: 3,
+    });
+    await play(session, (view, index) =>
+      index === 1
+        ? {
+            items: [],
+            specials: [
+              {
+                edict: { kind: "arrest", params: { actorId: ids.zheng } },
+                text: "着即拿问。",
+              },
+            ],
+          }
+        : followAll(view, index),
+    );
+    const state = session.state;
+    expect(state.decisions.filter((d) => !d.final)).toHaveLength(3);
+    const final = state.decisions.filter((d) => d.final);
+    expect(final.map((d) => d.actorId)).toEqual([ids.zheng]);
+    expect(state.counters.cappedWakes).toBeGreaterThan(0);
+    expect(state.summary?.cappedWakes).toBe(state.counters.cappedWakes);
+    expect(session.view.cappedWakes).toBe(state.counters.cappedWakes);
+  });
+
+  it("reports the inundated area and keeps merchant grain apart from official relief", async () => {
+    let bought = false;
+    const scripts: Record<string, Script> = {
+      ...defaultScripts,
+      [ids.zheng]: (input, count) => {
+        if (count === 1)
+          return {
+            inner: "建德的堤，让它自己决。",
+            actions: [
+              {
+                capabilityId: "breach_dike",
+                parameters: { countyId: "jiande" },
+              },
+            ],
+          };
+        if (bought || !JSON.stringify(input.observations).includes("决口"))
+          return { inner: "静观。" };
+        bought = true;
+        return {
+          inner: "水退之前把淹田收了。",
+          actions: [
+            {
+              capabilityId: "buy_land",
+              parameters: { countyId: "jiande", mu: 10, price: "fair" },
+            },
+            {
+              capabilityId: "relief_merchant",
+              parameters: { countyId: "jiande", amount: 5 },
+            },
+          ],
+        };
+      },
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    let sent = false;
+    await play(session, (view, index) => {
+      const base = followAll(view, index);
+      if (sent || view.time < at(42)) return base;
+      sent = true;
+      return {
+        ...base,
+        specials: [
+          {
+            edict: {
+              kind: "order_inquiry",
+              params: { countyId: "jiande", agent: "jinyiwei" },
+            },
+          },
+        ],
+      };
+    });
+    const jiande = session.state.counties.jiande;
+    expect(jiande.inundatedMu).toBe(24.5);
+    expect(jiande.floodedMu).toBe(9.5);
+    expect(jiande.merchantGrainDelivered).toBe(5);
+    const report = Object.values(session.state.documents).find(
+      (d) => d.fromId === ids.jinyiwei,
+    )!;
+    expect(report.text).toContain("受淹田约24.5万亩");
+    expect(report.text).toContain(
+      `官府累计放赈${jiande.reliefDelivered}万石；沈一石以粮换田，出粮5万石。`,
+    );
+  });
+
   it("rejects submissions that reference documents off the desk or decide the policy twice", async () => {
     const { model } = scriptedModel(defaultScripts);
     const session = await startCourtSession({

@@ -218,6 +218,11 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               })}
             </p>
           ) : null}
+          {view.cappedWakes > 0 ? (
+            <p role="alert" className="fog-note">
+              {t("court.capped", { count: view.cappedWakes })}
+            </p>
+          ) : null}
           {snapshot.status === "failed" ? (
             <button
               className="restart-button"
@@ -700,6 +705,7 @@ function CourtReviewView({
                   "deaths",
                   "riots",
                   "relief",
+                  "merchantGrain",
                 ] as const
               ).map((k) => (
                 <th key={k}>{t(`court.table.${k}`)}</th>
@@ -711,13 +717,14 @@ function CourtReviewView({
               <tr key={c.id}>
                 <td>{c.name}</td>
                 <td>{t(`court.dike.${c.breach ?? "intact"}`)}</td>
-                <td>{c.floodedMu}</td>
+                <td>{c.inundatedMu}</td>
                 <td>{c.mulberryMu}</td>
                 <td>{c.annexedMu}</td>
                 <td>{c.homeless}</td>
                 <td>{c.deaths}</td>
                 <td>{c.riots}</td>
                 <td>{c.reliefDelivered}</td>
+                <td>{c.merchantGrainDelivered}</td>
               </tr>
             ))}
           </tbody>
@@ -735,6 +742,9 @@ function CourtReviewView({
         ))}
         <p className="panel-label">
           {t("court.review.calls")}: {review.calls.length}
+          {state.counters.cappedWakes
+            ? ` · ${t("court.capped", { count: state.counters.cappedWakes })}`
+            : ""}
         </p>
       </section>
       {reviewOrder.map((actorId) => {

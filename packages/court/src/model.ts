@@ -15,7 +15,6 @@ import {
   countyIds,
   governorCapabilities,
   ids,
-  maxDecisions,
   travelDays,
   worldCheckInterval,
 } from "./jiajing.ts";
@@ -126,16 +125,26 @@ function wake(ctx: Context, actorId: string): void {
   const actor = ctx.state.actors[actorId];
   if (!actor?.llm || actor.nextDecisionAt !== undefined) return;
   if (!actor.active && actor.finalDecisionDone) return;
-  const pending = Object.values(ctx.state.actors).filter(
-    (a) => a.nextDecisionAt !== undefined,
-  ).length;
-  if (ctx.state.decisions.length + pending >= maxDecisions) return;
+  if (
+    actor.active &&
+    regularDecisionCount(ctx.state) >= ctx.state.decisionBudget
+  ) {
+    ctx.commit("npc.wake_capped", { actorId }, actorId);
+    return;
+  }
   let at: number = nextShichen(ctx.time, CHEN);
   if (actor.active && actor.lastDecisionAt !== undefined)
     at = Math.max(at, actor.lastDecisionAt + days(2));
   if (at > ctx.state.endsAt) return;
   ctx.commit("npc.woken", { actorId, at }, actorId);
   ctx.later("npc.decide", at, { actorId });
+}
+
+function regularDecisionCount(state: CourtState): number {
+  const pending = Object.values(state.actors).filter(
+    (a) => a.active && a.nextDecisionAt !== undefined,
+  ).length;
+  return state.decisions.filter((d) => !d.final).length + pending;
 }
 
 function ensureAudience(ctx: Context): void {
@@ -475,11 +484,17 @@ function resolveAction(ctx: Context, actionId: string): void {
       ctx.commit("resources.updated", {
         patch: { [key]: round1(state[key] - amount) },
       });
-      const land =
-        key === "merchantGrain" ? round1(Math.min(amount, county.paddyMu)) : 0;
+      const merchant = key === "merchantGrain";
+      const land = merchant ? round1(Math.min(amount, county.paddyMu)) : 0;
       patchCounty({
         reliefStock: round1(county.reliefStock + amount),
-        reliefDelivered: round1(county.reliefDelivered + amount),
+        ...(merchant
+          ? {
+              merchantGrainDelivered: round1(
+                county.merchantGrainDelivered + amount,
+              ),
+            }
+          : { reliefDelivered: round1(county.reliefDelivered + amount) }),
         paddyMu: round1(county.paddyMu - land),
         floodedMu: round1(Math.max(0, county.floodedMu - land)),
         mulberryMu: round1(county.mulberryMu + land),
@@ -578,6 +593,7 @@ function handleFlood(ctx: Context): void {
       patch: {
         breach,
         floodedMu: round1(c.paddyMu * 0.7),
+        inundatedMu: round1(c.paddyMu * 0.7),
         homeless,
         deaths: c.deaths + Math.round(homeless * 10000 * 0.02),
         unrest: clamp01(c.unrest + 0.2),
@@ -645,9 +661,13 @@ function jinyiweiReport(
     return [
       `We inspected ${c.name} as ordered.`,
       c.breach
-        ? `The dike has breached: about ${c.floodedMu} (10k mu) under water, ${c.homeless} (10k) homeless, ${c.deaths} dead.`
+        ? `The dike has breached: about ${c.inundatedMu} (10k mu) went under water, ${c.homeless} (10k) homeless, ${c.deaths} dead.`
         : "The dike is intact.",
-      `Relief delivered so far: ${c.reliefDelivered} (10k shi). Mulberry converted: ${c.mulberryMu} (10k mu), of which ${c.annexedMu} bought cheaply by merchants.`,
+      `Official relief delivered so far: ${c.reliefDelivered} (10k shi).`,
+      c.merchantGrainDelivered
+        ? `Merchants gave ${c.merchantGrainDelivered} (10k shi) of grain in exchange for land.`
+        : "",
+      `Mulberry converted: ${c.mulberryMu} (10k mu), of which ${c.annexedMu} bought cheaply by merchants.`,
       `Popular mood: ${level}.`,
       testimony
         ? "River workers testify the dike was dug open at night by provincial judicial runners; it was no natural disaster."
@@ -658,9 +678,13 @@ function jinyiweiReport(
   return [
     `臣等奉旨查勘${c.name}。`,
     c.breach
-      ? `新安江大堤决口，淹田约${c.floodedMu}万亩，灾民约${c.homeless}万口，已死${c.deaths}人。`
+      ? `新安江大堤决口，受淹田约${c.inundatedMu}万亩，灾民约${c.homeless}万口，已死${c.deaths}人。`
       : "大堤无恙。",
-    `官府累计放赈${c.reliefDelivered}万石；已改桑田${c.mulberryMu}万亩，其中低价归入沈一石名下者${c.annexedMu}万亩。`,
+    `官府累计放赈${c.reliefDelivered}万石`,
+    c.merchantGrainDelivered
+      ? `；沈一石以粮换田，出粮${c.merchantGrainDelivered}万石`
+      : "",
+    `。已改桑田${c.mulberryMu}万亩，其中低价归入沈一石名下者${c.annexedMu}万亩。`,
     `民情${level}。`,
     testimony ? "另据河工供称，大堤系按察司差役趁夜掘开，非天灾所致。" : "",
     "谨奏。",
@@ -694,6 +718,7 @@ function summarize(state: CourtState): JsonObject {
     merchantGrainLeft: state.merchantGrain,
     merchantSilverSpent: state.merchantSilverSpent,
     decisions: state.decisions.length,
+    cappedWakes: state.counters.cappedWakes ?? 0,
     gaps: state.gaps.length,
   };
 }
@@ -1158,6 +1183,14 @@ export function reduceCourtState(
       return patchActor(state, String(p.actorId), {
         nextDecisionAt: simTime(Number(p.at)),
       });
+    case "npc.wake_capped":
+      return {
+        ...state,
+        counters: {
+          ...state.counters,
+          cappedWakes: (state.counters.cappedWakes ?? 0) + 1,
+        },
+      };
     case "npc.decision_skipped": {
       const actor = state.actors[String(p.actorId)]!;
       const { nextDecisionAt: _, ...rest } = actor;

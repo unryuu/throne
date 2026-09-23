@@ -28,6 +28,7 @@ export async function startCourtSession(options: {
   language: string;
   model: CourtModel;
   records?: readonly SimulationRecord[];
+  decisionBudget?: number;
 }): Promise<CourtSession> {
   const memo = new Map<string, string>();
   const model: CourtModel = async (request) => {
@@ -46,7 +47,7 @@ export async function startCourtSession(options: {
       return text;
     }
   };
-  const initial = createInitialState(options.runId);
+  const initial = createInitialState(options.runId, options.decisionBudget);
   const domain = createCourtModel({
     runId: options.runId,
     language: options.language,

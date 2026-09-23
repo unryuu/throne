@@ -25,7 +25,7 @@ export const ids = {
 
 export const countyIds: readonly CountyId[] = ["chunan", "jiande", "tonglu"];
 export const policyTargetMu = 50;
-export const maxDecisions = 80;
+export const decisionBudget = 160;
 
 export const governorCapabilities = [
   "buy_land",
@@ -206,6 +206,7 @@ function county(
     mulberryMu: 0,
     annexedMu: 0,
     floodedMu: 0,
+    inundatedMu: 0,
     dikeIntegrity,
     dikeSabotaged: false,
     population,
@@ -213,6 +214,7 @@ function county(
     deaths: 0,
     reliefStock: 0,
     reliefDelivered: 0,
+    merchantGrainDelivered: 0,
     unrest: 0.1,
     riots: 0,
   };
@@ -279,7 +281,10 @@ const openingObservations = [
   },
 ];
 
-export function createInitialState(seed: string): CourtState {
+export function createInitialState(
+  seed: string,
+  budget = decisionBudget,
+): CourtState {
   const documents: Record<string, CourtDocument> = {
     [ids.policyMemorial]: opening(
       ids.policyMemorial,
@@ -327,6 +332,7 @@ export function createInitialState(seed: string): CourtState {
     gaps: [],
     counters: { obs: openingObservations.length },
     endsAt: at(75, 11),
+    decisionBudget: budget,
   };
 }
 
