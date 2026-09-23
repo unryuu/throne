@@ -1,6 +1,8 @@
 # 当前功能
 
-当前无已开工功能。FEAT-0005 已完成：[连续决策短局及两局实玩](archive/continuous-crisis.md)。现行规则见 [ADR 0005](../architecture/0005-continuous-crisis.md)。
+实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)。
+
+FEAT-0005 已完成：[连续决策短局及两局实玩](archive/continuous-crisis.md)。现行规则见 [ADR 0005](../architecture/0005-continuous-crisis.md)。
 
 FEAT-0001 已完成，见 [归档](archive/live-npc.md) 与 [首次实玩](archive/live-playtest-2026-09-21.md)。
 
