@@ -1,6 +1,6 @@
 # 当前功能
 
-实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0008 NPC 提示词缓存](active/prompt-cache.md)待实测。
+实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0008 NPC 提示词缓存](active/prompt-cache.md)待实测。待开始：[FEAT-0009 人物 agent 化](active/agent-shell.md)。
 
 FEAT-0007 已完成：[司礼监、每日决策点与陆炳](archive/court-directorate.md)；现行规则见 [ADR 0007](../architecture/0007-directorate-daily-court.md)。
 
