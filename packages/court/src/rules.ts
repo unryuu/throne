@@ -174,11 +174,11 @@ export function draftProblem(
 
 /** 行动力: what writing and doing cost an actor; duty work and an arrested man's last word are free. */
 export const energyRules = {
-  perDay: 2,
-  cap: 4,
+  perDay: 1,
+  cap: 3,
   documents: 3,
   actions: 3,
-  note: "写信、上奏、密奏、办一件事各花 1 点；票拟、处置本章、转呈原报、口奏不花。每日恢复 2 点，最多攒 4 点。",
+  note: "写信、上奏、密奏、办一件事各花 1 点；票拟、处置本章、转呈原报、口奏不花。每日恢复 1 点，最多攒 3 点。",
 };
 
 const dayOf = (time: number) => Math.floor(time / 12);

@@ -9,7 +9,12 @@ import {
   type CourtModel,
   type CourtModelRequest,
 } from "./npc.ts";
-import { draftProblem, edictProblem, energyAvailable } from "./rules.ts";
+import {
+  draftProblem,
+  edictProblem,
+  energyAvailable,
+  energyRules,
+} from "./rules.ts";
 import { startCourtSession, type CourtSession } from "./session.ts";
 import type { CourtState } from "./types.ts";
 
@@ -80,14 +85,20 @@ const defaultScripts: Record<string, Script> = {
           ],
           actions: [
             { capabilityId: "breach_dike", parameters: { countyId: "jiande" } },
-            {
-              capabilityId: "buy_land",
-              parameters: { countyId: "chunan", mu: 10, price: "low" },
-            },
             { capabilityId: "summon_rain", parameters: {} },
           ],
         }
-      : { inner: "且看局势。" },
+      : count === 2
+        ? {
+            inner: "精力缓过来了，收田。",
+            actions: [
+              {
+                capabilityId: "buy_land",
+                parameters: { countyId: "chunan", mu: 10, price: "low" },
+              },
+            ],
+          }
+        : { inner: "且看局势。" },
   [ids.hu]: (input) =>
     JSON.stringify(input.log).includes("决口")
       ? {
@@ -654,32 +665,29 @@ describe("court session", () => {
     });
     await play(session, followAll);
     const state = session.state;
-    const [first, second, third] = state.decisions.filter(
-      (d) => d.actorId === ids.zheng,
+    const zheng = state.decisions.filter((d) => d.actorId === ids.zheng);
+    const [first, second] = zheng;
+    const { cap, perDay } = energyRules;
+    expect(first!.input.energy).toMatchObject({ available: cap });
+    expect(first!.documentIds).toHaveLength(Math.min(3, cap));
+    expect(first!.actionIds).toHaveLength(Math.max(0, cap - 3));
+    expect(first!.rejected.map((r) => r.reason)).toEqual(
+      Array(6 - cap).fill("精力不济，今天办不了这么多"),
     );
-    expect(first!.input.energy).toMatchObject({ available: 4 });
-    expect(first!.documentIds).toHaveLength(3);
-    expect(first!.actionIds).toHaveLength(1);
-    expect(first!.rejected.map((r) => r.reason)).toEqual([
-      "精力不济，今天办不了这么多",
-      "精力不济，今天办不了这么多",
-    ]);
     const restDays = Math.floor(second!.at / 12) - Math.floor(first!.at / 12);
     expect(second!.input.energy).toMatchObject({
-      available: Math.min(4, 2 * restDays),
+      available: Math.min(cap, perDay * restDays),
     });
-    expect(third!.input.energy).toMatchObject({
-      available: energyAvailable(
-        {
-          ...state,
-          decisions: state.decisions.filter((d) => d.at < third!.at),
-        },
-        ids.zheng,
-        third!.at,
-      ),
-    });
+    for (const d of zheng)
+      expect(d.input.energy).toMatchObject({
+        available: energyAvailable(
+          { ...state, decisions: state.decisions.filter((x) => x.at < d.at) },
+          ids.zheng,
+          d.at,
+        ),
+      });
     const hu = state.decisions.find((d) => d.actorId === ids.hu)!;
-    expect(hu.input.energy).toMatchObject({ available: 4 });
+    expect(hu.input.energy).toMatchObject({ available: cap });
   });
 
   it("lets only the emperor dispatch the Embroidered Guard", () => {
