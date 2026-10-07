@@ -28,6 +28,8 @@ export type ShellState = {
   readonly routes?: readonly JsonObject[];
   readonly report?: string;
   readonly interrupt?: string;
+  /** Scratch files the actor wrote under /tmp today. */
+  readonly tmp?: Readonly<Record<string, string>>;
   /** Set by `end`; the day is over once it is. */
   readonly inner?: string;
 };
@@ -219,7 +221,7 @@ export function shellHelp(input: JsonObject = {}): string {
     "  policy.txt      你所知的朝廷旨意",
     ...(role.length ? ["  desk/           你案头待办的本章"] : []),
     "",
-    "查阅：ls cat head tail grep wc sed -n echo，可用管道 |、&&、for 循环。",
+    "查阅：ls cat head tail grep wc sed -n find sort echo，可用管道、&&、for 循环、$(...)。草稿可以写在 /tmp/ 下，其余文件只读。",
     "",
     "发文书（今日最多三份，每份不超过200字）：",
     "  send memorial --subject 题目 --text 正文",
@@ -265,23 +267,78 @@ export function shellGreeting(input: JsonObject): string {
 
 // ---------- parsing ----------
 
-type Command = { argv: string[]; heredoc?: string[] };
+type Redirect = { fd: 1 | 2; append: boolean; target: string };
+type Command = {
+  argv: string[];
+  heredoc?: string[];
+  stdinFile?: string;
+  redirects: Redirect[];
+};
 type Op = "|" | "&&" | "||" | ";";
 type Node =
   | { kind: "cmd"; command: Command }
-  | { kind: "for"; name: string; words: string[]; body: Seq };
+  | {
+      kind: "for";
+      name: string;
+      words: string[];
+      body: Seq;
+      redirects: Redirect[];
+    };
 type Seq = { op: Op | undefined; node: Node }[];
-type Token = string | { op: Op | ">" | "<" } | { heredoc: string[] };
+type Token = string | { op: Op | ">" | ">>" | "<" } | { heredoc: string[] };
 
-/** Variable references are kept as \u0001NAME\u0002 inside words until run time. */
-function variable(source: string, i: number): { text: string; end: number } {
-  if (source[i + 1] === "(") throw new Error("不支持命令替换 $(...)");
-  const m = /^\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/.exec(source.slice(i));
+/** The source inside $( ) or backticks starting at i, and where it ends. */
+function substitution(
+  source: string,
+  i: number,
+): { inner: string; end: number } {
+  const backtick = source[i] === "`";
+  let j = backtick ? i + 1 : i + 2;
+  let depth = 1;
+  let quote: string | undefined;
+  for (; j < source.length; j += 1) {
+    const c = source[j]!;
+    if (quote) {
+      if (c === quote) quote = undefined;
+      else if (c === "\\" && quote === '"') j += 1;
+      continue;
+    }
+    if (c === "\\") {
+      j += 1;
+      continue;
+    }
+    if (backtick) {
+      if (c === "`") break;
+      continue;
+    }
+    if (c === "'" || c === '"') quote = c;
+    else if (c === "(") depth += 1;
+    else if (c === ")" && --depth === 0) break;
+  }
+  if (j >= source.length) throw new Error("命令替换没有闭合");
+  return { inner: source.slice(backtick ? i + 1 : i + 2, j), end: j + 1 };
+}
+
+/**
+ * Variable references are kept as \u0001NAME\u0002 and command substitutions
+ * as \u0003INDEX\u0004 inside words until run time.
+ */
+function variable(
+  source: string,
+  i: number,
+  subs: string[],
+): { text: string; end: number } {
+  if (source[i] === "`" || source[i + 1] === "(") {
+    const sub = substitution(source, i);
+    subs.push(sub.inner);
+    return { text: `\u0003${subs.length - 1}\u0004`, end: sub.end };
+  }
+  const m = /^\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*|\?))/.exec(source.slice(i));
   if (!m) return { text: "$", end: i + 1 };
   return { text: `\u0001${m[1] ?? m[2]}\u0002`, end: i + m[0].length };
 }
 
-function tokenize(source: string): Token[] {
+function tokenize(source: string, subs: string[]): Token[] {
   const out: Token[] = [];
   const open: { body: string[]; delimiter: string }[] = [];
   let word: string | undefined;
@@ -328,8 +385,8 @@ function tokenize(source: string): Token[] {
       let j = i + 1;
       let text = "";
       while (j < source.length && source[j] !== '"') {
-        if (source[j] === "$") {
-          const v = variable(source, j);
+        if (source[j] === "$" || source[j] === "`") {
+          const v = variable(source, j, subs);
           text += v.text;
           j = v.end;
           continue;
@@ -348,8 +405,8 @@ function tokenize(source: string): Token[] {
       i += 2;
       continue;
     }
-    if (c === "$") {
-      const v = variable(source, i);
+    if (c === "$" || c === "`") {
+      const v = variable(source, i, subs);
       word = (word ?? "") + v.text;
       i = v.end;
       continue;
@@ -367,7 +424,7 @@ function tokenize(source: string): Token[] {
       i += 2 + m[0].length;
       continue;
     }
-    if (two === "&&" || two === "||") {
+    if (two === "&&" || two === "||" || two === ">>") {
       flush();
       out.push({ op: two });
       i += 2;
@@ -387,8 +444,8 @@ function tokenize(source: string): Token[] {
   return out;
 }
 
-function parse(source: string): Seq {
-  const tokens = tokenize(source);
+function parse(source: string, subs: string[]): Seq {
+  const tokens = tokenize(source, subs);
   let i = 0;
   const opAt = (k: number) => {
     const t = tokens[k];
@@ -396,23 +453,39 @@ function parse(source: string): Seq {
       ? t.op
       : undefined;
   };
-  /** Swallows `> /dev/null` and `2> /dev/null`; other redirections are refused. */
-  const redirect = (): boolean => {
-    const numbered = tokens[i] === "2" && opAt(i + 1) === ">";
-    if (!numbered && opAt(i) !== ">" && opAt(i) !== "<") return false;
-    const at = numbered ? i + 1 : i;
-    if (opAt(at) === ">" && tokens[at + 1] === "/dev/null") {
-      i = at + 2;
-      return true;
-    }
-    throw new Error("只读文件系统，不能重定向");
+  /** Reads `[n]> target`, `[n]>> target` or `< file` at i into the lists given. */
+  const redirect = (
+    redirects: Redirect[],
+    stdin?: (path: string) => void,
+  ): boolean => {
+    const fd =
+      (tokens[i] === "1" || tokens[i] === "2") &&
+      (opAt(i + 1) === ">" || opAt(i + 1) === ">>")
+        ? Number(tokens[i])
+        : undefined;
+    const at = fd === undefined ? i : i + 1;
+    const op = opAt(at);
+    if (op !== ">" && op !== ">>" && op !== "<") return false;
+    const target = tokens[at + 1];
+    if (typeof target !== "string") throw new Error(`${op} 后面缺少目标`);
+    i = at + 2;
+    if (op === "<") {
+      if (!stdin) throw new Error("这里不能用 < 读入");
+      stdin(target);
+    } else
+      redirects.push({
+        fd: fd === 2 ? 2 : 1,
+        append: op === ">>",
+        target,
+      });
+    return true;
   };
   const command = (): Node => {
-    const cmd: Command = { argv: [] };
+    const cmd: Command = { argv: [], redirects: [] };
     while (i < tokens.length) {
       const t = tokens[i]!;
+      if (redirect(cmd.redirects, (path) => (cmd.stdinFile = path))) continue;
       if (typeof t === "string") {
-        if (t === "2" && opAt(i + 1) === ">" && redirect()) continue;
         cmd.argv.push(t);
         i += 1;
         continue;
@@ -422,7 +495,6 @@ function parse(source: string): Seq {
         i += 1;
         continue;
       }
-      if (redirect()) continue;
       break;
     }
     return { kind: "cmd", command: cmd };
@@ -445,8 +517,9 @@ function parse(source: string): Seq {
     i += 1;
     const body = seq("done");
     i += 1;
-    while (redirect()) continue;
-    return { kind: "for", name, words, body };
+    const redirects: Redirect[] = [];
+    while (redirect(redirects)) continue;
+    return { kind: "for", name, words, body, redirects };
   };
   const seq = (stop?: string): Seq => {
     const out: Seq = [];
@@ -487,17 +560,38 @@ function parse(source: string): Seq {
 type Io = { stdin: string | undefined };
 type Out = { out: string; err?: string; code: number };
 type Ctx = {
-  files: Files;
+  /** The read-only tree plus today's /tmp files. */
+  files: Map<string, string>;
   input: JsonObject;
   state: ShellState;
   vars: Map<string, string>;
+  subs: string[];
+  code: number;
 };
 
-const substitute = (ctx: Ctx, word: string) =>
-  word.replace(
-    /\u0001(\w+)\u0002/g,
-    (_, name: string) => ctx.vars.get(name) ?? "",
-  );
+const tmpLimit = 20000;
+
+const substitute = (ctx: Ctx, word: string): string =>
+  word
+    .replace(/\u0001(\w+|\?)\u0002/g, (_, name: string) =>
+      name === "?" ? String(ctx.code) : (ctx.vars.get(name) ?? ""),
+    )
+    .replace(/\u0003(\d+)\u0004/g, (_, n: string) =>
+      runSeq(ctx, parse(ctx.subs[Number(n)]!, ctx.subs)).output.replace(
+        /\n+$/,
+        "",
+      ),
+    );
+
+function write(ctx: Ctx, path: string, text: string, append: boolean): void {
+  const full = resolve(ctx.state.cwd, path);
+  if (!full.startsWith("/tmp/"))
+    throw new Error(`${path}: 只读文件系统；草稿可以写在 /tmp/ 下`);
+  const next = (append ? (ctx.files.get(full) ?? "") : "") + text;
+  if (next.length > tmpLimit) throw new Error(`${path}: 草稿太长`);
+  ctx.files.set(full, next);
+  ctx.state = { ...ctx.state, tmp: { ...ctx.state.tmp, [full]: next } };
+}
 
 function resolve(cwd: string, path: string): string {
   const raw = path.replace(/^~(?=\/|$)/, "");
@@ -512,7 +606,9 @@ function resolve(cwd: string, path: string): string {
 }
 
 const isDir = (files: Files, path: string) =>
-  path === "/" || [...files.keys()].some((f) => f.startsWith(path + "/"));
+  path === "/" ||
+  path === "/tmp" ||
+  [...files.keys()].some((f) => f.startsWith(path + "/"));
 
 function children(files: Files, dir: string): string[] {
   const prefix = dir === "/" ? "/" : dir + "/";
@@ -1115,6 +1211,58 @@ function end(ctx: Ctx, argv: string[], io: Io): Out {
   };
 }
 
+function find(ctx: Ctx, argv: string[]): Out {
+  const roots: string[] = [];
+  let name: RegExp | undefined;
+  let type: string | undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i]!;
+    if (a === "-name" || a === "-iname") {
+      const pattern = argv[++i] ?? "*";
+      name = new RegExp(
+        "^" +
+          pattern
+            .replace(/[.+^${}()|\\]/g, "\\$&")
+            .replace(/\*/g, ".*")
+            .replace(/\?/g, ".") +
+          "$",
+        a === "-iname" ? "i" : "",
+      );
+    } else if (a === "-type") type = argv[++i];
+    else if (a === "-maxdepth" || a === "-mindepth") i += 1;
+    else if (!a.startsWith("-")) roots.push(a);
+  }
+  const out: string[] = [];
+  for (const root of roots.length ? roots : ["."]) {
+    const base = resolve(ctx.state.cwd, root);
+    if (ctx.files.has(base)) {
+      out.push(root);
+      continue;
+    }
+    if (!isDir(ctx.files, base)) throw new Error(`${root}: 没有那个文件或目录`);
+    const prefix = base === "/" ? "/" : base + "/";
+    const found = new Set<string>();
+    for (const f of ctx.files.keys()) {
+      if (!f.startsWith(prefix)) continue;
+      const rest = f.slice(prefix.length).split("/");
+      for (let k = 1; k < rest.length; k += 1)
+        found.add(`d:${rest.slice(0, k).join("/")}`);
+      found.add(`f:${rest.join("/")}`);
+    }
+    if (!type || type === "d") if (!name || name.test(root)) out.push(root);
+    for (const entry of [...found].sort((a, b) =>
+      a.slice(2).localeCompare(b.slice(2)),
+    )) {
+      const kind = entry[0];
+      const rel = entry.slice(2);
+      if (type && type !== kind) continue;
+      if (name && !name.test(rel.split("/").at(-1)!)) continue;
+      out.push(`${root.replace(/\/$/, "")}/${rel}`);
+    }
+  }
+  return { out: out.join("\n"), code: 0 };
+}
+
 function exec(ctx: Ctx, command: Command, io: Io): Out {
   const [name, ...args] = command.argv;
   const stdin = command.heredoc ? command.heredoc.join("\n") : io.stdin;
@@ -1147,7 +1295,38 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
     case "sed":
       return sed(ctx, args, local);
     case "echo":
-      return { out: args.join(" "), code: 0 };
+      return {
+        out: (args[0] === "-e" || args[0] === "-n" ? args.slice(1) : args)
+          .join(" ")
+          .replace(/\\n/g, args[0] === "-e" ? "\n" : "\\n"),
+        code: 0,
+      };
+    case "true":
+    case ":":
+      return { out: "", code: 0 };
+    case "false":
+      return { out: "", code: 1 };
+    case "bash":
+    case "sh": {
+      if (args[0] !== "-c" || args[1] === undefined)
+        throw new Error("这里只支持 bash -c '命令'");
+      const result = runSeq(ctx, parse(args[1], ctx.subs));
+      return { out: result.output, code: result.code };
+    }
+    case "find":
+      return find(ctx, args);
+    case "sort": {
+      const f = flags(args);
+      const ls = sources(ctx, f.rest, local).flatMap((x) => lines(x.text));
+      const sorted = f.flags.has("n")
+        ? ls.sort((a, b) => parseFloat(a) - parseFloat(b))
+        : ls.sort();
+      if (f.flags.has("r")) sorted.reverse();
+      return {
+        out: (f.flags.has("u") ? [...new Set(sorted)] : sorted).join("\n"),
+        code: 0,
+      };
+    }
     case "pwd":
       return { out: ctx.state.cwd, code: 0 };
     case "cd": {
@@ -1198,22 +1377,62 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
   }
 }
 
-/** Runs one tool call: a command line that may chain with |, &&, || and ;. */
+function attempt(ctx: Ctx, name: string | undefined, f: () => Out): Out {
+  try {
+    return f();
+  } catch (error) {
+    return { out: "", err: `${name}: ${(error as Error).message}`, code: 1 };
+  }
+}
+
+/** Sends stdout and stderr where the redirections say. */
+function redirected(ctx: Ctx, result: Out, redirects: Redirect[]): Out {
+  let { out, err } = result;
+  let code = result.code;
+  for (const r of redirects) {
+    const target = substitute(ctx, r.target);
+    const text = r.fd === 1 ? out : (err ?? "");
+    if (target === "/dev/null") {
+      if (r.fd === 1) out = "";
+      else err = undefined;
+    } else if (target === "&1" || target === "&2") {
+      if (r.fd === 2 && target === "&1") {
+        out = [err, out].filter(Boolean).join("\n");
+        err = undefined;
+      } else if (r.fd === 1 && target === "&2") {
+        err = [err, out].filter(Boolean).join("\n");
+        out = "";
+      }
+    } else {
+      try {
+        write(ctx, target, text ? text + "\n" : "", r.append);
+        if (r.fd === 1) out = "";
+        else err = undefined;
+      } catch (error) {
+        err = [err, `bash: ${(error as Error).message}`]
+          .filter(Boolean)
+          .join("\n");
+        code = 1;
+      }
+    }
+  }
+  return { out, ...(err ? { err } : {}), code };
+}
+
 function run(ctx: Ctx, node: Node, stdin: string | undefined): Out {
   if (node.kind === "cmd") {
-    const command = {
+    const command: Command = {
       ...node.command,
       argv: node.command.argv.map((a) => substitute(ctx, a)),
     };
-    try {
-      return exec(ctx, command, { stdin });
-    } catch (error) {
-      return {
-        out: "",
-        err: `${command.argv[0]}: ${(error as Error).message}`,
-        code: 1,
-      };
-    }
+    const name = command.argv[0];
+    const result = attempt(ctx, name, () => {
+      const input = command.stdinFile
+        ? read(ctx, substitute(ctx, command.stdinFile))
+        : stdin;
+      return exec(ctx, command, { stdin: input });
+    });
+    return redirected(ctx, result, command.redirects);
   }
   const chunks: string[] = [];
   let code = 0;
@@ -1225,7 +1444,7 @@ function run(ctx: Ctx, node: Node, stdin: string | undefined): Out {
     if (result.output) chunks.push(result.output);
     code = result.code;
   }
-  return { out: chunks.join("\n"), code };
+  return redirected(ctx, { out: chunks.join("\n"), code }, node.redirects);
 }
 
 function runSeq(ctx: Ctx, seq: Seq): { output: string; code: number } {
@@ -1238,6 +1457,7 @@ function runSeq(ctx: Ctx, seq: Seq): { output: string; code: number } {
     if (op === "||" && code === 0) continue;
     const result = run(ctx, node, op === "|" ? piped : undefined);
     code = result.code;
+    ctx.code = code;
     if (result.err) chunks.push(result.err);
     if (seq[i + 1]?.op === "|") piped = result.out;
     else if (result.out) chunks.push(result.out);
@@ -1263,14 +1483,16 @@ export function runShell(
       state,
     };
   const ctx: Ctx = {
-    files,
+    files: new Map([...files, ...Object.entries(state.tmp ?? {})]),
     input,
     state: tired ? state : { ...state, commands: state.commands + 1 },
     vars: new Map(),
+    subs: [],
+    code: 0,
   };
   let seq: Seq;
   try {
-    seq = parse(source);
+    seq = parse(source, ctx.subs);
   } catch (error) {
     return {
       output: `bash: ${(error as Error).message}`,

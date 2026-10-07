@@ -148,10 +148,43 @@ describe("agent shell", () => {
     expect(s.run("for x in a b\ndo\n  echo $x\ndone | tail -n 1").output).toBe(
       "b",
     );
-    expect(s.run("for f in a; do echo $(ls); done").output).toContain(
-      "不支持命令替换",
-    );
+    expect(s.run("for f in a; do echo $(ls); done").output).toBe("淳安.txt");
     expect(s.run("for f in a; echo $f").output).toContain("for 的写法");
+  });
+
+  it("handles the habits seen in the first terminal playtest", () => {
+    const s = session();
+    expect(s.run("send 2>&1 | head -n 1").output).toContain("用法：send");
+    expect(s.run("ls log/ province/ 2>/dev/null").isError).toBe(false);
+    expect(s.run("bash -c 'cat policy.txt'").output).toBe("圣旨已准改稻为桑");
+    expect(
+      s.run("cat > /tmp/letter1.txt <<'EOF'\n堤工紧要，\n乞速拨银。\nEOF")
+        .output,
+    ).toBe("(无输出)");
+    expect(
+      s.run("echo 又及 >> /tmp/letter1.txt && cat /tmp/letter1.txt").output,
+    ).toBe("堤工紧要，\n乞速拨银。\n又及");
+    expect(
+      s.run(
+        'send letter --to 杨金水 --subject 修堤 < /tmp/letter1.txt && send memorial --subject 疏 --text "$(head -n 1 /tmp/letter1.txt)"',
+      ).isError,
+    ).toBe(false);
+    expect(s.state.documents.map((d) => d.text)).toEqual([
+      "堤工紧要，\n乞速拨银。\n又及",
+      "堤工紧要，",
+    ]);
+    expect(s.run("echo x > profile.txt").output).toContain("只读文件系统");
+    expect(s.run("ls /tmp").output).toBe("letter1.txt");
+    expect(s.run("find . -name '*received*'").output).toBe(
+      "./log/0001-received.txt\n./log/0003-received.txt",
+    );
+    expect(s.run("ls log | sort -r | head -n 1").output).toBe(
+      "0003-received.txt",
+    );
+    expect(s.run("for f in `ls province`; do echo $f; done").output).toBe(
+      "淳安.txt",
+    );
+    expect(s.run("false; echo $?").output).toBe("1");
   });
 
   it("queues letters, memorials and deeds within the day's limits", () => {
