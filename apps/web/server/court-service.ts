@@ -59,6 +59,8 @@ export type CourtModelFactory = (
 
 export class CourtService {
   readonly entries = new Map<string, Entry>();
+  /** Terminal days read the log as files, so it is never cut short. */
+  readonly fullLog = process.env.THRONE_NPC_MODE !== "form";
   constructor(
     readonly root: string,
     // THRONE_NPC_MODE=form keeps the one-shot reply for comparison runs.
@@ -84,6 +86,7 @@ export class CourtService {
       runId: id,
       language: locale,
       model: this.modelFactory((trace) => calls.push(trace)),
+      fullLog: this.fullLog,
     });
     const entry: Entry = {
       id,
@@ -185,6 +188,7 @@ export class CourtService {
       runId: id,
       language: saved.locale,
       model: this.modelFactory((trace) => calls.push(trace)),
+      fullLog: this.fullLog,
       records: saved.records,
     });
     const phase = session.state.phase;

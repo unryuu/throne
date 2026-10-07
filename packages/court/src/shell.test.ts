@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "@throne/shared-types";
-import { ids } from "./jiajing.ts";
-import { courtDecisionSchema, type CourtModel } from "./npc.ts";
+import { at } from "./calendar.ts";
+import { createInitialState, ids } from "./jiajing.ts";
+import { buildNpcInput, courtDecisionSchema, type CourtModel } from "./npc.ts";
 import { startCourtSession } from "./session.ts";
 import {
   emptyShellState,
@@ -185,6 +186,13 @@ describe("agent shell", () => {
       "淳安.txt",
     );
     expect(s.run("false; echo $?").output).toBe("1");
+    expect(s.run("cd log; cat profile.txt").output).toContain(
+      "当前目录 /log，cd / 回到起点",
+    );
+    expect(s.run("which send pending").output).toBe(
+      "send: 终端内置命令\npending: 终端内置命令",
+    );
+    expect(s.run("env | grep PWD").output).toBe("PWD=/log");
   });
 
   it("queues letters, memorials and deeds within the day's limits", () => {
@@ -287,6 +295,27 @@ const ids_ = (input: JsonObject, key: string, idKey: string) =>
   ((input[key] as JsonObject[] | undefined) ?? []).map((x) => String(x[idKey]));
 
 describe("terminal days in a whole court run", () => {
+  it("keeps the whole log for a terminal day", () => {
+    const base = createInitialState("r");
+    const state = {
+      ...base,
+      observations: Array.from({ length: 200 }, (_, i) => ({
+        id: `obs-${i}`,
+        actorId: ids.zheng,
+        at: at(Math.floor(i / 12), i % 12),
+        kind: "rumour",
+        payload: { text: `传闻${i}` },
+      })),
+    };
+    const log = (full: boolean) =>
+      (
+        buildNpcInput(state, ids.zheng, 300, "r", "zh-CN", full)
+          .log as JsonObject[]
+      ).length;
+    expect(log(false)).toBeLessThan(200);
+    expect(log(true)).toBe(200);
+  });
+
   it("lets every role do its duty through the terminal", async () => {
     const model = terminalModel({
       [ids.yanSong]: (input) =>

@@ -650,12 +650,19 @@ function expand(ctx: Ctx, arg: string): string[] {
   return hits.length ? hits : [arg];
 }
 
+/** Names the working directory, since a cd in an earlier call is the usual cause. */
+const missing = (ctx: Ctx, path: string) =>
+  `${path}: 没有那个文件或目录` +
+  (ctx.state.cwd !== "/" && !path.startsWith("/")
+    ? `（当前目录 ${ctx.state.cwd}，cd / 回到起点）`
+    : "");
+
 function read(ctx: Ctx, path: string): string {
   const full = resolve(ctx.state.cwd, path);
   const text = ctx.files.get(full);
   if (text !== undefined) return text;
   if (isDir(ctx.files, full)) throw new Error(`${path}: 是一个目录`);
-  throw new Error(`${path}: 没有那个文件或目录`);
+  throw new Error(missing(ctx, path));
 }
 
 const lines = (text: string) =>
@@ -802,7 +809,7 @@ function ls(ctx: Ctx, argv: string[]): Out {
   const blocks = targets.map((t) => {
     const path = resolve(ctx.state.cwd, t);
     if (ctx.files.has(path)) return t;
-    if (!isDir(ctx.files, path)) throw new Error(`${t}: 没有那个文件或目录`);
+    if (!isDir(ctx.files, path)) throw new Error(missing(ctx, t));
     const names = children(ctx.files, path);
     const body = f.flags.has("l")
       ? names
@@ -1239,7 +1246,7 @@ function find(ctx: Ctx, argv: string[]): Out {
       out.push(root);
       continue;
     }
-    if (!isDir(ctx.files, base)) throw new Error(`${root}: 没有那个文件或目录`);
+    if (!isDir(ctx.files, base)) throw new Error(missing(ctx, root));
     const prefix = base === "/" ? "/" : base + "/";
     const found = new Set<string>();
     for (const f of ctx.files.keys()) {
@@ -1262,6 +1269,44 @@ function find(ctx: Ctx, argv: string[]): Out {
   }
   return { out: out.join("\n"), code: 0 };
 }
+
+const builtins = [
+  "help",
+  "ls",
+  "cat",
+  "head",
+  "tail",
+  "grep",
+  "egrep",
+  "wc",
+  "sed",
+  "find",
+  "tree",
+  "sort",
+  "echo",
+  "pwd",
+  "cd",
+  "date",
+  "whoami",
+  "env",
+  "printenv",
+  "which",
+  "type",
+  "true",
+  "false",
+  "bash",
+  "sh",
+  "send",
+  "act",
+  "pending",
+  "cancel",
+  "end",
+  "draft",
+  "dispose",
+  "route",
+  "report",
+  "interrupt",
+];
 
 function exec(ctx: Ctx, command: Command, io: Io): Out {
   const [name, ...args] = command.argv;
@@ -1315,6 +1360,36 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
     }
     case "find":
       return find(ctx, args);
+    case "tree":
+      return find(ctx, args.length ? args : ["."]);
+    case "which":
+    case "type":
+    case "command": {
+      const names = args.filter((a) => !a.startsWith("-"));
+      const known = names.filter((n) => builtins.includes(n));
+      return {
+        out: known.map((n) => `${n}: 终端内置命令`).join("\n"),
+        ...(known.length < names.length
+          ? {
+              err: names
+                .filter((n) => !known.includes(n))
+                .map((n) => `${n}: 没有这个命令`)
+                .join("\n"),
+            }
+          : {}),
+        code: known.length === names.length ? 0 : 1,
+      };
+    }
+    case "env":
+    case "printenv":
+      return {
+        out: [
+          "HOME=/",
+          `PWD=${ctx.state.cwd}`,
+          `USER=${String((ctx.input.self as JsonObject | undefined)?.name ?? "")}`,
+        ].join("\n"),
+        code: 0,
+      };
     case "sort": {
       const f = flags(args);
       const ls = sources(ctx, f.rest, local).flatMap((x) => lines(x.text));

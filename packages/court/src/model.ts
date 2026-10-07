@@ -92,6 +92,7 @@ type Options = {
   readonly runId: string;
   readonly language: string;
   readonly model: CourtModel;
+  readonly fullLog?: boolean;
 };
 
 class Context {
@@ -948,6 +949,7 @@ async function handleDecisions(
         ctx.time,
         options.runId,
         options.language,
+        options.fullLog,
       ),
     });
   }

@@ -44,6 +44,8 @@ export async function startCourtSession(options: {
   model: CourtModel;
   records?: readonly SimulationRecord[];
   decisionBudget?: number;
+  /** Give regular decisions the whole experience log (terminal mode). */
+  fullLog?: boolean;
 }): Promise<CourtSession> {
   const memo = new Map<string, string>();
   const model: CourtModel = async (request) => {
@@ -68,6 +70,7 @@ export async function startCourtSession(options: {
     runId: options.runId,
     language: options.language,
     model,
+    ...(options.fullLog ? { fullLog: true } : {}),
   });
   const store = new InMemoryEventStore();
   let kernel: SimulationKernel<CourtState>;

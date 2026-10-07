@@ -342,14 +342,17 @@ export function buildNpcInput(
   time: number,
   runId: string,
   language: string,
+  /** A terminal day browses the log as files, so nothing needs to drop out of it. */
+  fullLog = false,
 ): JsonObject {
   const actor = state.actors[actorId];
   if (!actor) throw new Error(`Unknown actor ${actorId}`);
   const name = (id: string) => state.actors[id]?.name ?? id;
   const last = actor.lastDecisionAt ?? -1;
   const all = experienceLog(state, actorId, language);
-  const start =
-    Math.floor(Math.max(0, all.length - logLimit) / logChunk) * logChunk;
+  const start = fullLog
+    ? 0
+    : Math.floor(Math.max(0, all.length - logLimit) / logChunk) * logChunk;
   const kept = all.slice(start);
   const entryNo = new Map(kept.map((e, i) => [e.key, start + i + 1]));
   const firstNew = kept.findIndex((e) => e.at > last);
