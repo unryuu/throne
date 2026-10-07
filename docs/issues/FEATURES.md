@@ -2,6 +2,8 @@
 
 实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0008 NPC 提示词缓存](active/prompt-cache.md)待实测。[FEAT-0009 人物 agent 化](active/agent-shell.md)假终端实验已完成，待引擎设计。
 
+远期待开发：[FEAT-0010 更好玩与名场面](active/playability.md)，名场面清单待用户收集。
+
 FEAT-0007 已完成：[司礼监、每日决策点与陆炳](archive/court-directorate.md)；现行规则见 [ADR 0007](../architecture/0007-directorate-daily-court.md)。
 
 FEAT-0005 已完成：[连续决策短局及两局实玩](archive/continuous-crisis.md)。现行规则见 [ADR 0005](../architecture/0005-continuous-crisis.md)。
