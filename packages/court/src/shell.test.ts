@@ -11,6 +11,7 @@ import {
   shellFiles,
   shellGreeting,
   shellLimits,
+  shellReplay,
   type ShellState,
 } from "./shell.ts";
 
@@ -253,6 +254,23 @@ describe("agent shell", () => {
     expect(decision.inner).toBe("先把堤修上。");
     expect(decision.documents.map((d) => d.subject)).toEqual(["商修堤", "三"]);
     expect(decision.actions).toHaveLength(1);
+  });
+
+  it("replays a recorded day to the same outputs and decision", () => {
+    const s = session();
+    const commands = [
+      "cat > /tmp/d.txt <<'EOF'\n修堤要紧。\nEOF",
+      "send letter --to 杨金水 --subject 堤 < /tmp/d.txt",
+      "act repair_dike --countyId chunan",
+      "pending",
+      "end --text 先修堤。",
+    ];
+    const live = commands.map((c) => s.run(c));
+    const replayed = shellReplay(input, commands);
+    expect(replayed.map((r) => r.output)).toEqual(live.map((r) => r.output));
+    expect(shellDecision(replayed.at(-1)!.state)).toEqual(
+      shellDecision(s.state),
+    );
   });
 
   it("ends the day after the command budget", () => {

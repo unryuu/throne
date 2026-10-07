@@ -14,10 +14,10 @@ Slice B done (2026-09-23): Lü Fang and Lu Bing are live. Every paper reaches th
 
 Checks: tests, types, formatting and build pass (the chunk-size advisory is non-blocking).
 
-Prompt caching (2026-10-06): NPC inputs now run stable identity, an append-only experience log, then the present; offline the cacheable prefix rose from 4–7% to 84–95% ([FEAT-0008](docs/issues/active/prompt-cache.md), real hit rate to be checked at the next live run).
+Prompt caching (2026-10-06): about 91% of input hits the cache in terminal mode ([FEAT-0008](docs/issues/archive/prompt-cache.md)).
 
 Embroidered Guard rule (2026-10-06): only the emperor can dispatch the Guard, so Yan Song's drafts and Lü Fang's proxies cannot; letters to people nobody plays (the Guard, Shen Yishi) or to the emperor are returned to the sender. See [ADR 0007](docs/architecture/0007-directorate-daily-court.md).
 
 Terminal actors (2026-10-06): every LLM actor's regular decision is now a day in a fake bash, with duty commands for Yan Song, Lü Fang and Lu Bing; the engine still settles the same decision. Writing and doing cost energy (1 a day, up to 3). Two 15-day playtests: at 2 a day energy never bound; at 1 a day decisions fell from 24 to 14 and model cost roughly halved, with no failures. Rules: [ADR 0008](docs/architecture/0008-terminal-actors.md); notes: [FEAT-0009](docs/issues/active/agent-shell.md).
 
-Next: to be discussed against [FEAT-0010](docs/issues/active/playability.md) (playability and memorable scenes).
+Next: see [HANDOFF.md](HANDOFF.md) — a spectator page, a story-first README and an ending card from [FEAT-0010](docs/issues/active/playability.md).

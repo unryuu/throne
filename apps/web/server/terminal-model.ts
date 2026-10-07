@@ -12,6 +12,9 @@ import {
   type ShellState,
 } from "@throne/court";
 
+/** Stored output per command; the rest is rebuilt by replaying the commands. */
+const keptOutput = 1500;
+
 const shellModule = fileURLToPath(
   new URL("../../../packages/court/src/shell.ts", import.meta.url),
 );
@@ -52,6 +55,17 @@ export function createTerminalCourtModel(
         durationMs: day.durationMs,
         thinkingObserved: (day.usage.reasoningTokens ?? 0) > 0,
         usage: { ...day.usage, requests: day.requests },
+        terminal: {
+          nudged: day.nudged,
+          steps: day.transcript.map((step) => ({
+            command: step.command,
+            output:
+              step.output.length > keptOutput
+                ? `${step.output.slice(0, keptOutput)}…（已截断，共 ${step.output.length} 字）`
+                : step.output,
+            isError: step.isError,
+          })),
+        },
       });
       return JSON.stringify(shellDecision(day.state as ShellState));
     } catch (cause) {

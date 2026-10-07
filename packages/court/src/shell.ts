@@ -1583,6 +1583,20 @@ export function runShell(
   };
 }
 
+/** Reruns a recorded day on the same input; each result carries the full output. */
+export function shellReplay(
+  input: JsonObject,
+  commands: readonly string[],
+): ShellResult[] {
+  const files = shellFiles(input);
+  let state = emptyShellState;
+  return commands.map((command) => {
+    const result = runShell(input, state, command, files);
+    state = result.state;
+    return result;
+  });
+}
+
 /** The day's intents in the shape a one-shot decision takes; the day must have ended. */
 export function shellDecision(state: ShellState): JsonObject {
   if (state.inner === undefined) throw new Error("The actor never ran end");

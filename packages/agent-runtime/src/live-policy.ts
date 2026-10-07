@@ -26,6 +26,15 @@ export type LiveCallTrace = {
   readonly usage: JsonObject | null;
   readonly status: "succeeded" | "failed";
   readonly error?: string;
+  /** A terminal day's commands in order; outputs are clipped and can be rebuilt with shellReplay. */
+  readonly terminal?: {
+    readonly nudged: boolean;
+    readonly steps: readonly {
+      readonly command: string;
+      readonly output: string;
+      readonly isError: boolean;
+    }[];
+  };
 };
 
 export async function readDeepSeekKey(root: string): Promise<string> {

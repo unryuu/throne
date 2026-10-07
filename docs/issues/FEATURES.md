@@ -1,6 +1,8 @@
 # 当前功能
 
-实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0008 NPC 提示词缓存](active/prompt-cache.md)待实测。[FEAT-0009 人物 agent 化](active/agent-shell.md)假终端实验已完成，待引擎设计。
+实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0009 人物 agent 化](active/agent-shell.md)已接入引擎。远期：[FEAT-0010 更好玩与名场面](active/playability.md)。
+
+FEAT-0008 已完成：[NPC 提示词缓存](archive/prompt-cache.md)，实测命中率约 91%。
 
 远期待开发：[FEAT-0010 更好玩与名场面](active/playability.md)，名场面清单待用户收集。
 
