@@ -18,6 +18,6 @@ Prompt caching (2026-10-06): NPC inputs now run stable identity, an append-only 
 
 Embroidered Guard rule (2026-10-06): only the emperor can dispatch the Guard, so Yan Song's drafts and Lü Fang's proxies cannot; letters to people nobody plays (the Guard, Shen Yishi) or to the emperor are returned to the sender. See [ADR 0007](docs/architecture/0007-directorate-daily-court.md).
 
-Terminal actors (2026-10-06): every LLM actor's regular decision is now a day in a fake bash, with duty commands for Yan Song, Lü Fang and Lu Bing; the engine still settles the same decision. Writing and doing cost energy (2 a day, up to 4). First 15-day playtest: 24 decisions, no failures, 202 requests; energy never bound because actors decide at most every other day. Rules: [ADR 0008](docs/architecture/0008-terminal-actors.md); notes: [FEAT-0009](docs/issues/active/agent-shell.md).
+Terminal actors (2026-10-06): every LLM actor's regular decision is now a day in a fake bash, with duty commands for Yan Song, Lü Fang and Lu Bing; the engine still settles the same decision. Writing and doing cost energy (1 a day, up to 3). Two 15-day playtests: at 2 a day energy never bound; at 1 a day decisions fell from 24 to 14 and model cost roughly halved, with no failures. Rules: [ADR 0008](docs/architecture/0008-terminal-actors.md); notes: [FEAT-0009](docs/issues/active/agent-shell.md).
 
-Next: settle the energy numbers, then a full playtest; finance (C) and the cabinet-meeting opening (D) come after.
+Next: to be discussed against [FEAT-0010](docs/issues/active/playability.md) (playability and memorable scenes).
