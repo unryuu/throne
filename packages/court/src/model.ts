@@ -172,7 +172,26 @@ function regularDecisionCount(state: CourtState): number {
 /** Hands a paper to the Directorate; Lü Fang disposes of it at his next batch. */
 function toDirectorate(ctx: Context, documentId: string): void {
   ctx.commit("document.to_directorate", { documentId });
-  wake(ctx, ids.lvFang);
+  const doc = ctx.state.documents[documentId]!;
+  // Recorded as Lü's own observation so his log keeps the paper as it reached him.
+  observe(ctx, ids.lvFang, "paper_received", {
+    documentId,
+    kind: doc.kind,
+    from: ctx.state.actors[doc.fromId]?.name ?? doc.fromId,
+    subject: doc.subject,
+    text: doc.text,
+    ...(doc.draft
+      ? {
+          cabinetDraft: j({
+            edict: doc.draft.edict.kind,
+            params: doc.draft.edict.params,
+            text: doc.draft.text,
+          }),
+        }
+      : {}),
+    ...(doc.route?.note ? { luBingNote: doc.route.note } : {}),
+    ...(doc.returns?.length ? { returnedBefore: doc.returns.length } : {}),
+  });
 }
 
 const secluded = (state: CourtState, time: number) =>

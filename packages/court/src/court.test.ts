@@ -88,7 +88,7 @@ const defaultScripts: Record<string, Script> = {
         }
       : { inner: "且看局势。" },
   [ids.hu]: (input) =>
-    JSON.stringify(input.observations).includes("决口")
+    JSON.stringify(input.log).includes("决口")
       ? {
           inner: "去建德看看。",
           actions: [
@@ -233,6 +233,14 @@ describe("court session", () => {
       (d) => d.kind === "letter",
     )!;
     expect(letter.toIds).toEqual([ids.yang, ids.hu]);
+
+    for (const actorId of [ids.yanSong, ids.zheng, ids.hu, ids.yang]) {
+      const logs = state.decisions
+        .filter((d) => d.actorId === actorId)
+        .map((d) => JSON.stringify(d.input.log).slice(1, -1));
+      for (let i = 1; i < logs.length; i += 1)
+        expect(logs[i]!.startsWith(logs[i - 1]!)).toBe(true);
+    }
 
     const records = await session.records();
     const callCount = calls.length;
@@ -491,7 +499,7 @@ describe("court session", () => {
               },
             ],
           };
-        if (bought || !JSON.stringify(input.observations).includes("决口"))
+        if (bought || !JSON.stringify(input.log).includes("决口"))
           return { inner: "静观。" };
         bought = true;
         return {
@@ -656,7 +664,7 @@ describe("court session", () => {
       .filter((d) => d.actorId === ids.lvFang)
       .map((d) => JSON.stringify(d.input));
     expect(lvInputs.some((i) => i.includes('"returnedBefore":1'))).toBe(true);
-    expect(lvInputs.at(-1)).toContain("edictsIssued");
+    expect(lvInputs.at(-1)).toContain('"type":"edict_written"');
     expect(lvInputs.at(-1)).toContain("朱批：请于浙江改稻为桑以裕国用疏");
   });
 

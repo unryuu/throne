@@ -164,6 +164,172 @@ function secludedNote(state: CourtState, language: string): string {
     : "皇上每日午时理事";
 }
 
+/** Log entries kept per prompt; older ones drop in whole chunks so the cached prefix rarely moves. */
+const logLimit = 150;
+const logChunk = 50;
+
+type LogEntry = {
+  readonly key: string;
+  readonly at: number;
+  readonly order: number;
+  readonly seq: number;
+  readonly body: JsonObject;
+};
+
+const seqOf = (id: string) => Number(id.split("-").at(-1)) || 0;
+
+/** The actor's own experience in time order. Entries never change once written. */
+function experienceLog(
+  state: CourtState,
+  actorId: string,
+  language: string,
+): LogEntry[] {
+  const name = (id: string) => state.actors[id]?.name ?? id;
+  const when = (t: number) => formatCourtTime(t, language);
+  const entries: LogEntry[] = [];
+  for (const d of Object.values(state.documents)) {
+    const arrived = d.arrivals[actorId];
+    if (
+      d.deliveredTo.includes(actorId) &&
+      arrived !== undefined &&
+      d.fromId !== actorId &&
+      (d.toIds.includes(actorId) || actorId === ids.yanSong)
+    )
+      entries.push({
+        key: `doc:${d.id}`,
+        at: arrived,
+        order: 0,
+        seq: seqOf(d.id),
+        body: {
+          at: when(arrived),
+          type: "received",
+          documentId: d.id,
+          kind: d.kind,
+          from: name(d.fromId),
+          to: d.toIds.map(name),
+          subject: d.subject,
+          text: d.text,
+        },
+      });
+    // The Directorate writes out vermilion rescripts, but Guard dispatches go straight to Lu Bing.
+    if (
+      actorId === ids.lvFang &&
+      d.kind === "edict" &&
+      !(
+        d.edict?.kind === "order_inquiry" && d.edict.params.agent === "jinyiwei"
+      )
+    )
+      entries.push({
+        key: `edict:${d.id}`,
+        at: d.sentAt,
+        order: 1,
+        seq: seqOf(d.id),
+        body: {
+          at: when(d.sentAt),
+          type: "edict_written",
+          subject: d.subject,
+          to: d.toIds.map(name),
+          text: d.text,
+          ...(d.replyToId &&
+          state.documents[d.replyToId]?.rescript?.disposition === "proxy"
+            ? { byDirectorate: true }
+            : {}),
+        },
+      });
+  }
+  for (const o of state.observations)
+    if (o.actorId === actorId)
+      entries.push({
+        key: `obs:${o.id}`,
+        at: o.at,
+        order: 2,
+        seq: seqOf(o.id),
+        body: { at: when(o.at), type: "observed", kind: o.kind, ...o.payload },
+      });
+  state.decisions.forEach((d, index) => {
+    if (d.actorId !== actorId) return;
+    const output = d.output as CourtDecision;
+    const subject = (id: string) => state.documents[id]?.subject ?? id;
+    const notDone = d.actionIds.flatMap((id) => {
+      const a = state.actions[id]!;
+      return a.status === "impossible"
+        ? [{ capabilityId: a.capabilityId, reason: a.outcome?.reason ?? null }]
+        : [];
+    });
+    entries.push({
+      key: `decision:${d.decisionEpisodeId}`,
+      at: d.at,
+      order: 3,
+      seq: index,
+      body: {
+        at: when(d.at),
+        type: d.mode === "converse" ? "you_spoke_with_emperor" : "you_decided",
+        inner: output.inner,
+        ...(d.mode === "converse"
+          ? {
+              emperorSaid: d.input.emperorSays ?? null,
+              yourReply: output.reply ?? null,
+            }
+          : {}),
+        ...(output.report ? { oralReport: output.report } : {}),
+        ...(output.drafts.length
+          ? {
+              drafts: output.drafts.map((x) => ({
+                subject: subject(x.memorialId),
+                edict: x.edict.kind,
+                text: x.text,
+              })),
+            }
+          : {}),
+        ...(output.dispositions.length
+          ? {
+              dispositions: output.dispositions.map((x) => ({
+                subject: subject(x.documentId),
+                action: x.action,
+                ...(x.text ? { text: x.text } : {}),
+              })),
+            }
+          : {}),
+        ...(output.routes.length
+          ? {
+              routes: output.routes.map((r) => ({
+                subject: subject(r.reportId),
+                channel: r.channel,
+                ...(r.note ? { note: r.note } : {}),
+              })),
+            }
+          : {}),
+        documentsSent: d.documentIds.map((id) => {
+          const doc = state.documents[id]!;
+          return {
+            kind: doc.kind,
+            to: doc.toIds.map(name),
+            subject: doc.subject,
+            text: doc.text,
+          };
+        }),
+        actions: d.actionIds.map((id) => {
+          const a = state.actions[id]!;
+          return {
+            capabilityId: a.capabilityId,
+            parameters: a.parameters,
+            ...(a.description ? { description: a.description } : {}),
+          };
+        }),
+        ...(notDone.length ? { couldNotBeDone: notDone } : {}),
+        ...(d.rejected.length ? { rejected: d.rejected } : {}),
+      },
+    });
+  });
+  return entries.sort(
+    (a, b) => a.at - b.at || a.order - b.order || a.seq - b.seq,
+  );
+}
+
+/**
+ * Builds the actor-visible input. Order matters for prompt caching: stable
+ * identity first, then the append-only log, then everything that changes per call.
+ */
 export function buildNpcInput(
   state: CourtState,
   actorId: string,
@@ -175,97 +341,26 @@ export function buildNpcInput(
   if (!actor) throw new Error(`Unknown actor ${actorId}`);
   const name = (id: string) => state.actors[id]?.name ?? id;
   const last = actor.lastDecisionAt ?? -1;
-  const history = state.decisions.filter((d) => d.actorId === actorId);
-  const received = Object.values(state.documents)
-    .filter(
-      (d) =>
-        d.deliveredTo.includes(actorId) &&
-        d.fromId !== actorId &&
-        (d.toIds.includes(actorId) || actorId === ids.yanSong) &&
-        !(actorId === ids.luBing && d.kind === "report"),
-    )
-    .map((d) => ({
-      id: d.id,
-      kind: d.kind,
-      from: name(d.fromId),
-      to: d.toIds.map(name),
-      subject: d.subject,
-      text: d.text,
-      arrivedAt: formatCourtTime(d.arrivals[actorId] ?? d.sentAt, language),
-      new: (d.arrivals[actorId] ?? d.sentAt) > last,
-      ...(d.draft && actorId === ids.yanSong
-        ? { yourDraft: d.draft.text }
-        : {}),
-      ...(d.rescript?.text && actorId === ids.yanSong
-        ? { vermilionRescript: d.rescript.text }
-        : {}),
-    }))
-    .slice(-25);
-  const observations = state.observations
-    .filter((o) => o.actorId === actorId)
-    .map((o) => ({
-      at: formatCourtTime(o.at, language),
-      kind: o.kind,
-      new: o.at > last,
-      ...o.payload,
-    }))
-    .slice(-30);
-  const ownHistory = history.slice(-10).map((d) => {
-    const output = d.output as CourtDecision;
-    const subject = (id: string) => state.documents[id]?.subject ?? id;
-    return {
-      at: formatCourtTime(d.at, language),
-      inner: output.inner,
-      ...(d.mode === "converse"
-        ? {
-            emperorSaid: d.input.emperorSays ?? null,
-            yourReply: output.reply ?? null,
-          }
-        : {}),
-      ...(output.report ? { oralReport: output.report } : {}),
-      ...(output.dispositions?.length
-        ? {
-            dispositions: output.dispositions.map((x) => ({
-              subject: subject(x.documentId),
-              action: x.action,
-              ...(x.text ? { text: x.text } : {}),
-            })),
-          }
-        : {}),
-      ...(output.routes?.length
-        ? {
-            routes: output.routes.map((r) => ({
-              subject: subject(r.reportId),
-              channel: r.channel,
-              ...(r.note ? { note: r.note } : {}),
-            })),
-          }
-        : {}),
-      documents: d.documentIds.map((id) => {
-        const doc = state.documents[id]!;
-        return {
-          kind: doc.kind,
-          to: doc.toIds.map(name),
-          subject: doc.subject,
-          text: doc.text,
-          reply: doc.rescript
-            ? doc.rescript.disposition === "hold"
-              ? "留中"
-              : "已批复"
-            : "尚无回音",
-        };
-      }),
-      actions: d.actionIds.map((id) => {
-        const action = state.actions[id]!;
-        return {
-          capabilityId: action.capabilityId,
-          parameters: action.parameters,
-          status: action.status,
-          ...(action.outcome ? { outcome: action.outcome } : {}),
-        };
-      }),
-    };
-  });
+  const all = experienceLog(state, actorId, language);
+  const start =
+    Math.floor(Math.max(0, all.length - logLimit) / logChunk) * logChunk;
+  const kept = all.slice(start);
+  const entryNo = new Map(kept.map((e, i) => [e.key, start + i + 1]));
+  const firstNew = kept.findIndex((e) => e.at > last);
+  /** Points at the log entry holding a paper's text, or carries the text when it fell out of the log. */
+  const paper = (key: string | undefined, text: string): JsonObject => {
+    const n = key ? entryNo.get(key) : undefined;
+    return n !== undefined ? { textInLogEntry: n } : { text };
+  };
+  const receivedAt = (documentId: string) =>
+    [...state.observations]
+      .reverse()
+      .find(
+        (o) =>
+          o.actorId === actorId &&
+          o.kind === "paper_received" &&
+          o.payload.documentId === documentId,
+      )?.id;
   const governs = actor.capabilities.includes("relief_granary");
   const resources: JsonObject = {
     ...(governs ? { provincialGranary: state.granary } : {}),
@@ -277,16 +372,14 @@ export function buildNpcInput(
       : {}),
   };
   return {
-    runId,
-    decisionEpisodeId: episodeId(state, actorId),
     actorId,
-    now: formatCourtTime(time, language),
     self: {
       name: actor.name,
       office: actor.office,
       status: actor.active ? "在任" : "已被革职拿问，不能再调动任何人和物",
       ...actor.profile,
     },
+    documentKinds: actor.active ? actor.documentKinds : ["memorial", "letter"],
     capabilities: actor.active
       ? actor.capabilities.map((id) => ({
           id,
@@ -294,27 +387,38 @@ export function buildNpcInput(
           parameters: capabilitySpecs[id]!.parameters,
         }))
       : [],
-    documentKinds: actor.active ? actor.documentKinds : ["memorial", "letter"],
     contacts: Object.values(state.actors)
       .filter((a) => a.id !== actorId && a.id !== ids.ruler && a.name)
       .map((a) => ({ id: a.id, name: a.name, office: a.office })),
+    ...(actorId === ids.yanSong
+      ? {
+          edictOptions: edictKinds.map((kind) => ({
+            kind,
+            description: edictDescriptions[kind],
+          })),
+        }
+      : {}),
+    ...(actorId === ids.lvFang
+      ? { dispositionOptions: directorateActions }
+      : {}),
+    ...(actorId === ids.luBing ? { routeOptions: routeChannels } : {}),
+    log: kept.map((e, i) => ({ n: start + i + 1, ...e.body })),
+    now: formatCourtTime(time, language),
+    decisionEpisodeId: episodeId(state, actorId),
+    runId,
+    newFromLogEntry: firstNew < 0 ? null : start + firstNew + 1,
     resources,
     ...(governs
-      ? {
-          provinceReports: countyIds.map((id) => countyFacts(state, id)),
-          policyKnownToYou: policyKnownTo(state, actorId),
-        }
-      : { policyKnownToYou: policyKnownTo(state, actorId) }),
-    documentsReceived: received,
-    observations,
-    ownHistory,
+      ? { provinceReports: countyIds.map((id) => countyFacts(state, id)) }
+      : {}),
+    policyKnownToYou: policyKnownTo(state, actorId),
     ...(actorId === ids.yanSong
       ? {
           memorialsAwaitingYourDraft: pendingDrafts(state).map((d) => ({
             memorialId: d.id,
             from: name(d.fromId),
             subject: d.subject,
-            text: d.text,
+            ...paper(`doc:${d.id}`, d.text),
             ...(d.returns?.length
               ? {
                   returnedByDirectorate: d.returns.map((r) => ({
@@ -323,10 +427,6 @@ export function buildNpcInput(
                   })),
                 }
               : {}),
-          })),
-          edictOptions: edictKinds.map((kind) => ({
-            kind,
-            description: edictDescriptions[kind],
           })),
         }
       : {}),
@@ -343,24 +443,19 @@ export function buildNpcInput(
               ? { setAt: formatCourtTime(state.standing.setAt, language) }
               : {}),
           },
-          inbox: directorateInbox(state).map((d) => ({
-            documentId: d.id,
-            kind: d.kind,
-            from: name(d.fromId),
-            subject: d.subject,
-            text: d.text,
-            ...(d.draft
-              ? {
-                  cabinetDraft: {
-                    edict: d.draft.edict.kind,
-                    params: d.draft.edict.params,
-                    text: d.draft.text,
-                  },
-                }
-              : {}),
-            ...(d.returns?.length ? { returnedBefore: d.returns.length } : {}),
-            ...(d.route?.note ? { luBingNote: d.route.note } : {}),
-          })),
+          inbox: directorateInbox(state).map((d) => {
+            const key = receivedAt(d.id);
+            return {
+              documentId: d.id,
+              kind: d.kind,
+              from: name(d.fromId),
+              subject: d.subject,
+              ...(key ? paper(`obs:${key}`, d.text) : { text: d.text }),
+              ...(d.returns?.length
+                ? { returnedBefore: d.returns.length }
+                : {}),
+            };
+          }),
           held: directorateHeld(state).map((d) => ({
             documentId: d.id,
             from: name(d.fromId),
@@ -374,28 +469,6 @@ export function buildNpcInput(
               (time - (d.arrivals[ids.yanSong] ?? d.sentAt)) / 12,
             ),
           })),
-          dispositionOptions: directorateActions,
-          // The Directorate writes out vermilion rescripts, but Guard dispatches go straight to Lu Bing.
-          edictsIssued: Object.values(state.documents)
-            .filter(
-              (d) =>
-                d.kind === "edict" &&
-                !(
-                  d.edict?.kind === "order_inquiry" &&
-                  d.edict.params.agent === "jinyiwei"
-                ),
-            )
-            .slice(-15)
-            .map((d) => ({
-              at: formatCourtTime(d.sentAt, language),
-              subject: d.subject,
-              to: d.toIds.map(name),
-              text: d.text,
-              ...(d.replyToId &&
-              state.documents[d.replyToId]?.rescript?.disposition === "proxy"
-                ? { byDirectorate: true }
-                : {}),
-            })),
         }
       : {}),
     ...(actorId === ids.luBing
@@ -404,9 +477,8 @@ export function buildNpcInput(
           reportsAwaitingRouting: reportsAwaitingRoute(state).map((d) => ({
             reportId: d.id,
             subject: d.subject,
-            text: d.text,
+            ...paper(`doc:${d.id}`, d.text),
           })),
-          routeOptions: routeChannels,
         }
       : {}),
   };
@@ -495,7 +567,7 @@ export function conversationSystemPrompt(
 
 export function decisionPrompt(input: JsonObject): string {
   return [
-    "以下是你此刻所知的一切（JSON）。new 为 true 的是上次决定之后新到的内容。请作出这一次的决定。",
+    "以下是你此刻所知的一切（JSON）。log 是你的经历，按时间排列；从 newFromLogEntry 那一条起，是你上次决定之后新发生的。请作出这一次的决定。",
     JSON.stringify(input),
   ].join("\n\n");
 }
