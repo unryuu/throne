@@ -1,10 +1,8 @@
 # 当前功能
 
-实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0009 人物 agent 化](active/agent-shell.md)已接入引擎。远期：[FEAT-0010 更好玩与名场面](active/playability.md)。
+实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0009 人物 agent 化](active/agent-shell.md)已接入引擎；[FEAT-0010 更好玩与名场面](active/playability.md)的观战页、结局卡和 README 已做，其余未排期。
 
 FEAT-0008 已完成：[NPC 提示词缓存](archive/prompt-cache.md)，实测命中率约 91%。
-
-远期待开发：[FEAT-0010 更好玩与名场面](active/playability.md)，名场面清单待用户收集。
 
 FEAT-0007 已完成：[司礼监、每日决策点与陆炳](archive/court-directorate.md)；现行规则见 [ADR 0007](../architecture/0007-directorate-daily-court.md)。
 

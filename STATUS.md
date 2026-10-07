@@ -20,4 +20,6 @@ Embroidered Guard rule (2026-10-06): only the emperor can dispatch the Guard, so
 
 Terminal actors (2026-10-06): every LLM actor's regular decision is now a day in a fake bash, with duty commands for Yan Song, Lü Fang and Lu Bing; the engine still settles the same decision. Writing and doing cost energy (1 a day, up to 3). Two 15-day playtests: at 2 a day energy never bound; at 1 a day decisions fell from 24 to 14 and model cost roughly halved, with no failures. Rules: [ADR 0008](docs/architecture/0008-terminal-actors.md); notes: [FEAT-0009](docs/issues/active/agent-shell.md).
 
-Next: see [HANDOFF.md](HANDOFF.md) — a spectator page, a story-first README and an ending card from [FEAT-0010](docs/issues/active/playability.md).
+Spectator milestone (2026-10-06): a static spectator page (`apps/spectator`) steps through saved runs day by day, switching between what the emperor saw and what happened, with an ending card. It ships the first playtest (the Jiande breach) and the 15-day terminal run, with hand-picked scenes whose quotes a test checks against the actors' own words. The README now leads with the story. A GitHub Pages workflow publishes the page from `main`. See [FEAT-0010](docs/issues/active/playability.md).
+
+Next: see [HANDOFF.md](HANDOFF.md).
