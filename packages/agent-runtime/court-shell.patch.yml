@@ -1,0 +1,20 @@
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: sessions
+  disabled: true
+- id: llm-retry
+  disabled: true
+- id: llm-deepseek
+  config:
+    thinking: enabled
+    reasoningEffort: high
+    streamIdleTimeoutMs: 60000
+- insert:
+    - id: court-shell
+      name: ./court-shell/plugin.mjs

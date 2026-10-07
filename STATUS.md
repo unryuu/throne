@@ -18,4 +18,6 @@ Prompt caching (2026-10-06): NPC inputs now run stable identity, an append-only 
 
 Embroidered Guard rule (2026-10-06): only the emperor can dispatch the Guard, so Yan Song's drafts and Lü Fang's proxies cannot; letters to people nobody plays (the Guard, Shen Yishi) or to the emperor are returned to the sender. See [ADR 0007](docs/architecture/0007-directorate-daily-court.md).
 
-Next: see [HANDOFF.md](HANDOFF.md) — a fake-terminal experiment toward per-character agents ([FEAT-0009](docs/issues/active/agent-shell.md)), then the agent-based engine. Finance (C) and the cabinet-meeting opening (D) come after.
+Fake-terminal experiment (2026-10-06): Zheng Bichang lived one replayed day through a fake bash. He looked things up before acting, took 9–15 requests and about 1–1.4× the one-shot time, and decided more variously than the one-shot form. See [FEAT-0009](docs/issues/active/agent-shell.md).
+
+Next: see [HANDOFF.md](HANDOFF.md) — the agent-based engine. Finance (C) and the cabinet-meeting opening (D) come after.

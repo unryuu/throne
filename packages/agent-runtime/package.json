@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./policy": "./src/policy.ts",
-    "./live": "./src/live-policy.ts"
+    "./live": "./src/live-policy.ts",
+    "./shell-day": "./src/shell-day.ts"
   },
   "dependencies": {
     "@deepseek-ai/dsh-sdk-client": "0.1.5-rc.2",
