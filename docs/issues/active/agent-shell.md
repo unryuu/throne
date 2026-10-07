@@ -6,7 +6,7 @@
 
 ## 实现
 
-- 解释器 `packages/court/src/shell.ts`：把人物可见输入（`buildNpcInput`）摊成只读文件树（`profile.txt`、`log/` 每条经历一个文件、`province/`、`contacts.txt`、`abilities.txt` 等），支持 ls、cat、head、tail、grep、wc、sed -n、echo、cd、管道、`&&`/`||`、for 循环和变量；`send` 发文书、`act` 办事、`pending`/`cancel` 改主意，都只排进当天的意图。上限沿用现行规则：三份文书、三件事；另设每天 30 条命令。收笔时最后一段话就是 inner。
+- 解释器 `packages/court/src/shell.ts`：把人物可见输入（`buildNpcInput`）摊成只读文件树（`profile.txt`、`log/` 每条经历一个文件、`province/`、`contacts.txt`、`abilities.txt` 等），支持 ls、cat、head、tail、grep、wc、sed -n、echo、cd、管道、`&&`/`||`、for 循环和变量；`send` 发文书、`act` 办事、`pending`/`cancel` 改主意，都只排进当天的意图。上限沿用现行规则：三份文书、三件事；另设每天 30 条命令。用 `end` 收笔并写下 inner。
 - harness 插件 `packages/agent-runtime/court-shell/`：照 dsh-anchored-standard 的 `custom-bash` 注册同名 `bash`，只读快照 `world.json`，意图写回 `state.json`。harness 是子进程、不能回调引擎，但“看当天开始时的世界、日终统一结算”正好不需要回调。已核对 `request/header`：模型只看到这一个 bash 和我们的系统提示词。
 - 没用 prefab：把 help 的输出直接放在首条消息里，效果相同，也不碰会话内部结构。
 - 复跑：`npx tsx apps/web/server/agent-shell-day.ts [runId] [actorId] [第几次决策] [--no-oneshot] [--dry]`。脚本把存档回放到那次决策前，用现行输入跑假终端一天，并行跑一次现行填表做对照，结果写到 `runs/agent-shell/`。
@@ -32,6 +32,6 @@
 
 ## 留给引擎设计
 
-- 收笔：三次都在内心前面加了“收笔。”“我此刻的想法：”，第一次还复述了当天做的事，收紧提示词后仍有前缀。可以改用一条收笔命令带 inner，或者另定格式。
+- 收笔：起初约定“最后一段话就是内心”，三次都带了“收笔。”“我此刻的想法：”之类的前缀。已改为 `end --text` 命令（2026-10-06），复测干净；没收笔就在同一会话提醒一次，仍不收笔算调用失败。
 - 模型倾向读完全部经历。后期经历变长时，步数和输入都会增加，但大部分落在缓存里。是否需要“只看新的”之类的入口，等长局实测再定。
 - 行动力扣点、拜访、暗中调查都可以做成新的命令，结算留在引擎。

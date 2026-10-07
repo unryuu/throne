@@ -105,20 +105,15 @@ const report: Record<string, unknown> = {
 };
 if (agent.status === "fulfilled") {
   const a = agent.value;
-  const shellState = (a.state ?? {
-    documents: [],
-    actions: [],
-  }) as Parameters<typeof shellDecision>[0];
+  const shellState = a.state as Parameters<typeof shellDecision>[0];
   report.agent = {
     directory: a.directory,
     durationMs: a.durationMs,
     requests: a.requests,
     commands: a.transcript.length,
     usage: a.usage,
-    decision: courtDecisionSchema.parse(
-      shellDecision(shellState, a.finalResponse),
-    ),
-    finalResponse: a.finalResponse,
+    nudged: a.nudged,
+    decision: courtDecisionSchema.parse(shellDecision(shellState)),
     transcript: a.transcript,
   };
 } else report.agentError = String(agent.reason);

@@ -201,9 +201,12 @@ describe("agent shell", () => {
     expect(s.run("cancel D2").output).toBe("已撤回 D2。");
     expect(s.run("pending").output).toContain("文书 2/3");
 
-    const decision = courtDecisionSchema.parse(
-      shellDecision(s.state, "  先把堤修上。 "),
+    expect(() => shellDecision(s.state)).toThrow("never ran end");
+    expect(s.run("end --text '  先把堤修上。 '").output).toBe(
+      "今日收笔：文书 2 份，办事 1 件。",
     );
+    expect(s.run("ls").output).toBe("今天已经收笔了。");
+    const decision = courtDecisionSchema.parse(shellDecision(s.state));
     expect(decision.inner).toBe("先把堤修上。");
     expect(decision.documents.map((d) => d.subject)).toEqual(["商修堤", "三"]);
     expect(decision.actions).toHaveLength(1);
@@ -219,5 +222,8 @@ describe("agent shell", () => {
     expect(result.isError).toBe(true);
     expect(result.output).toContain("天色已晚");
     expect(state.commands).toBe(shellLimits.commands);
+    const ended = runShell(input, state, "end <<'EOF'\n累了。\nEOF");
+    expect(ended.isError).toBe(false);
+    expect(ended.state.inner).toBe("累了。");
   });
 });

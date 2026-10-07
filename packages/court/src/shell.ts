@@ -22,6 +22,8 @@ export type ShellState = {
   readonly commands: number;
   readonly documents: readonly ShellDocument[];
   readonly actions: readonly ShellAction[];
+  /** Set by `end`; the day is over once it is. */
+  readonly inner?: string;
 };
 export type ShellResult = {
   readonly output: string;
@@ -146,7 +148,10 @@ export function shellHelp(): string {
     "  参数名和取值见 abilities.txt。",
     "pending 看今天已排的文书和事，cancel 编号 撤回一项。",
     "",
-    "文书和事要等你收笔后世界才往前走。办完了就不再执行命令，只写下你此刻的想法收笔。",
+    "收笔（必须，收笔后今天就过去了）：",
+    "  end --text 你此刻真实的想法",
+    "  第一人称，不超过150字，只有你自己知道；不必复述今天做了什么。",
+    "文书和事要等你收笔后世界才往前走。",
   ].join("\n");
 }
 
@@ -838,6 +843,24 @@ function cancel(ctx: Ctx, argv: string[]): Out {
   return { code: 0, out: `已撤回 ${argv[0]}。` };
 }
 
+function end(ctx: Ctx, argv: string[], io: Io): Out {
+  const { positional, opts } = longOptions(argv);
+  for (const key of opts.keys())
+    if (key !== "text") throw new Error(`没有 --${key} 这个选项`);
+  const inner = (
+    opts.get("text")?.join("\n") ??
+    (positional.length ? positional.join(" ") : io.stdin) ??
+    ""
+  ).trim();
+  if (!inner) throw new Error("用法：end --text 你此刻真实的想法");
+  if (inner.length > 1200) throw new Error("太长了，写短些");
+  ctx.state = { ...ctx.state, inner };
+  return {
+    code: 0,
+    out: `今日收笔：文书 ${ctx.state.documents.length} 份，办事 ${ctx.state.actions.length} 件。`,
+  };
+}
+
 function exec(ctx: Ctx, command: Command, io: Io): Out {
   const [name, ...args] = command.argv;
   const stdin = command.heredoc ? command.heredoc.join("\n") : io.stdin;
@@ -894,6 +917,8 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
       return pending(ctx);
     case "cancel":
       return cancel(ctx, args);
+    case "end":
+      return end(ctx, args, local);
     default:
       return {
         out: "",
@@ -957,16 +982,20 @@ export function runShell(
   source: string,
   files: Files = shellFiles(input),
 ): ShellResult {
-  if (state.commands >= shellLimits.commands)
+  if (state.inner !== undefined)
+    return { output: "今天已经收笔了。", isError: true, state };
+  const tired = state.commands >= shellLimits.commands;
+  if (tired && !/^\s*end\b/.test(source))
     return {
-      output: "天色已晚，今天不能再办事了。请直接写下你此刻的想法收笔。",
+      output:
+        "天色已晚，今天不能再办事了。请用 end --text 写下你此刻的想法收笔。",
       isError: true,
       state,
     };
   const ctx: Ctx = {
     files,
     input,
-    state: { ...state, commands: state.commands + 1 },
+    state: tired ? state : { ...state, commands: state.commands + 1 },
     vars: new Map(),
   };
   let seq: Seq;
@@ -987,10 +1016,11 @@ export function runShell(
   };
 }
 
-/** The day's intents in the shape a one-shot decision takes. */
-export function shellDecision(state: ShellState, inner: string): JsonObject {
+/** The day's intents in the shape a one-shot decision takes; the day must have ended. */
+export function shellDecision(state: ShellState): JsonObject {
+  if (state.inner === undefined) throw new Error("The actor never ran end");
   return {
-    inner: inner.trim().slice(0, 1200) || "（未写）",
+    inner: state.inner,
     documents: state.documents.map((d) => ({
       kind: d.kind,
       ...(d.to ? { to: [...d.to] } : {}),
@@ -1015,7 +1045,7 @@ export function shellSystemPrompt(input: JsonObject): string {
     "你面前是一台终端（bash 工具）。文件是你此刻所知的一切，命令就是你今天能做的事：查阅用 ls、cat、grep 等，发文书用 send，办事用 act。",
     "今天你看到的是今早的情形。发出的文书和办的事要等你收笔后世界才给出结果，不要声称事情已经办成。可以什么都不做。",
     "文书用半文半白的明代公文口吻，每份不超过200字。",
-    "办完了就不再调用工具，收笔时只写你此刻真实的想法：第一人称，不超过150字，只有你自己知道。不要复述今天发了什么、办了什么，世界自会记下。",
+    "办完了用 end 收笔，写下你此刻真实的想法：第一人称，不超过150字，只有你自己知道。收笔后今天就过去了。",
     "用中文书写。",
   ].join("\n");
 }
