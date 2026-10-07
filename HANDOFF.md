@@ -1,29 +1,29 @@
-# HANDOFF：嘉靖朝后续切片
+# HANDOFF：人物 agent 化与锦衣卫规则
 
-写于 2026-09-23，分支 `feat/jiajing-court`（已推送）。先按 AGENTS.md 读 STATUS；设计意图见 [DESIGN §11–12](docs/DESIGN.md#12-朝局节奏两道闸与财政2026-09-23-确认)，现行规则见 [ADR 0006](docs/architecture/0006-court-memorials.md)，首次实玩见[归档](docs/issues/archive/court-playtest-2026-09-23.md)。代码在 `packages/court`（引擎与场景）和 `apps/web`（`court-play.tsx`、`server/court-service.ts`）。
+写于 2026-10-06，分支 `feat/jiajing-court`（已推送）。先按 AGENTS.md 读 STATUS。嘉靖朝现行规则见 [ADR 0006](docs/architecture/0006-court-memorials.md) 与 [ADR 0007](docs/architecture/0007-directorate-daily-court.md)，三局实玩见 `docs/issues/archive/`。代码在 `packages/court`（引擎与场景）、`apps/web`（`court-play.tsx`、`server/court-service.ts`）、`packages/agent-runtime`（DeepSeek Harness 调用）。
 
-按 A → B → C → D 的顺序做。每个切片都在 docs/issues 登记，做完实玩一局，结果写进归档。
+## 接下来（用户定的顺序）
 
-## A. 直接修（已完成）
+1. **假终端小实验**：见 [FEAT-0009](docs/issues/active/agent-shell.md)，里面有可借鉴的 dsh-anchored-standard 做法和要避开的坑（不能给真 bash）。只让郑泌昌过一天，量：会不会先自己查、一天几步、token 与耗时、行为是否比一次填表更好。不改游戏规则。
+2. **锦衣卫规则**：已定锦衣卫只听皇帝，只向皇帝回报。最小版：严嵩的票拟选项去掉 `agent: jinyiwei`，吕芳代批因此派不了锦衣卫；写给锦衣卫、沈一石等非 LLM 人物的信退回“无此收件人”（第三局分别有 45、36 封石沉大海）。与引擎设计无关，可以先做。
+3. **核心引擎的 agent 化实现**：依小实验结果设计。
 
-结果与第二局实玩见 [BUG-0007 归档](docs/issues/archive/court-slice-a.md)，其中有留给 B 的观察。
+原 HANDOFF 的 C（财政账户）、D（年终内阁会议开局）仍在计划中，排在 agent 化之后，见 DESIGN §12。
 
-## B. 司礼监与每日决策点（已完成）
+## 本轮已定或已查明（2026-10-06）
 
-规则见 [ADR 0007](docs/architecture/0007-directorate-daily-court.md)；实玩与遗留见 [FEAT-0007 归档](docs/issues/archive/court-directorate.md)。开始 C 之前，先请用户定护栏与吕芳调用频率。
-
-## C. 财政第一步
-
-按 DESIGN §12：设置有主人的账户（太仓、内帑、织造局、浙江藩库、军饷、沈一石、LLM 人物私囊），银与粮两种。转移需要时间，经手者可以截留（关键人物由 LLM 决定，小吏按固定比例）。欠账到期产生后果。奏报与账实可以不符，查账是一种调查能力。修玄花内帑。现有的 `granary / militaryGrain / merchantGrain / merchantSilverSpent` 迁移到账户里；沈一石的垫款变成要还的债。收入只做田赋（受灾减收）、盐课、丝绸（秋后到账）、商税，用简单的季节公式。
-
-## D. 年终内阁会议开局（已认可，C 之后做）
-
-开局改为年终内阁会议，改稻为桑是第一件被公开讨论的事。每个人的前情（知道多少、怎么知道、私下安排，嘉靖可能已私下点头）是开局前已确立的事实，不能事后编造。多人会议分轮发言，控制轮数。嘉靖可以亲临，也可以不去、听吕芳转述。徐阶、严世蕃成为 LLM 人物。时间线会拉长到端午之后，要靠闭关跳日控制节奏。
+- **提示词缓存**（[FEAT-0008](docs/issues/active/prompt-cache.md)）：已改为“不变的在前、只追加的经历在中、当下在尾”。离线估算可命中前缀从 4–7% 升到 84–95%；下次实玩核对 DeepSeek 返回的真实命中数。缓存只省输入：第三局输出 111 万 token 里 90 万是思考，调用次数仍是成本大头。
+- **行动力**：用户认可“写信、拜访、做事都有代价”的方向。提议的数字未定：每人每日 2 点，写信、上奏、做一件事、拜访各 1 点，最多攒 4 点；本职工作（票拟、处置本章、转呈原报）不花；皇帝不受限。agent 化后直接做成工具扣点，不在旧结构里先做。
+- **agent 化构想**：引擎是循环，维护客观状态；人物是按日行动的 agent，经工具查询、提交意图。同一天内大家看到当天开始时的世界，意图在日终统一结算。写信、拜访、暗中调查都经引擎递送，引擎不解读内容；“命令本身不产生效果”不变。拜访：同城、可被拒，别人可能知道“见过”但不知内容。
+- **关系系统**：朝廷场景没有实现，关系只是档案里的文字。等拜访、请托做出来，再让关系决定别人肯不肯替你办事。
+- **严嵩为何“派锦衣卫”**：他的票拟正文是“锦衣卫见在查勘……着浙直总督就近覆勘”，结构化字段却填了锦衣卫，引擎照字段派了人。根源是一份票拟只能带一个结构化敕令。他知道锦衣卫在查，是陆炳第 36 日写信告诉的。
+- **护栏 240 不够用**：第三局第 73 日用完。数值等 agent 化和行动力落地后再定。
 
 ## 环境与坑
 
-- 本机没有全局 pnpm，用 `npx -y pnpm@11.19.0 <script>`。开发服务用 `.claude/launch.json` 里的 `throne-web`（端口 4173）。
-- 开发服务在 `packages/*` 或 `apps/web/server` 的代码被修改时会自动重启，进行中的推进会丢失（存档还在，可以重试）。实玩期间不要改服务端代码。
-- 密钥在 gitignored 的 `secret/deepseek.txt`。真实调用需要联网，受沙箱限制的命令要放开。
-- thinking=high 时 reasoning 会吃掉输出额度；court 调用的上限是 32K。
-- 需要交回用户决定的：两道闸具体规则的取舍、每日决策点的数量与节奏，以及任何扩大人物或范围的改动。
+- 本机没有全局 pnpm，用 `npx -y pnpm@11.19.0 <script>`。开发服务用 `.claude/launch.json` 的 `throne-web`（端口 4173）；端口可能已被别的会话的服务占着，先确认那个服务是否在用。
+- 开发服务在 `packages/*` 或 `apps/web/server` 改动时自动重启，进行中的推进会丢失（存档还在，可以重试）。实玩期间改代码会打断对局。
+- 实玩用临时脚本经 `/api/court` 的 `rescript`、`act`、`retry` 接口代玩，脚本不在仓库里；请求要带 `X-Throne-Client: local`，地址用 `127.0.0.1`。
+- 密钥在 gitignored 的 `secret/deepseek.txt`。真实调用需联网，受沙箱限制的命令要放开。
+- 模型会把回复模板里的可选字段留空或填 null，schema 必须容忍。
+- harness 版本是 0.1.5-rc.2；dsh-anchored-standard 基于 0.1.3，插件接口要先核对。
