@@ -99,6 +99,13 @@ export const edictDescriptions: Readonly<Record<EdictKind, string>> = {
     '革职拿问某人：{"actorId":人物 id}，限郑泌昌、胡宗宪、杨金水。郑泌昌被拿后由胡宗宪兼署浙江巡抚。',
 };
 
+/** The options offered to the cabinet; the Embroidered Guard answers only to the emperor. */
+export const draftEdictDescriptions: Readonly<Record<EdictKind, string>> = {
+  ...edictDescriptions,
+  order_inquiry:
+    '派胡宗宪查勘某县：{"countyId":"chunan|jiande|tonglu","agent":"hu"}。锦衣卫只听皇帝亲命，票拟派不动。',
+};
+
 export const arrestableIds = [ids.zheng, ids.hu, ids.yang] as const;
 export const reprimandableIds = [
   ids.yanSong,
@@ -153,6 +160,16 @@ export function edictProblem(
     default:
       return undefined;
   }
+}
+
+/** Like edictProblem, for a rescript drafted by the cabinet (and so also for the Directorate's proxy). */
+export function draftProblem(
+  state: CourtState,
+  edict: Edict,
+): string | undefined {
+  if (edict.kind === "order_inquiry" && edict.params.agent === "jinyiwei")
+    return "锦衣卫只听皇帝亲命，票拟派不动";
+  return edictProblem(state, edict);
 }
 
 /** Practical feasibility check for an NPC action at decision time. */

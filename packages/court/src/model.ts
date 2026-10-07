@@ -40,6 +40,7 @@ import {
   capabilitySpecs,
   clamp01,
   countyFacts,
+  draftProblem,
   edictProblem,
   isCountyId,
   repairSource,
@@ -1072,23 +1073,29 @@ function applyDecision(
       });
       continue;
     }
-    const recipients =
-      kind === "letter"
-        ? [
-            ...new Set(
-              (Array.isArray(d.to) ? d.to : [d.to])
-                .map((to) => findActor(to))
-                .filter(
-                  (a): a is CourtActor =>
-                    a !== undefined && a.id !== actorId && a.id !== ids.ruler,
-                )
-                .map((a) => a.id),
-            ),
-          ]
-        : [ids.ruler];
     const subject = d.subject?.trim() || d.text.slice(0, 16);
+    const recipients: string[] = [];
+    const refused = rejected.length;
+    if (kind === "letter")
+      for (const to of Array.isArray(d.to) ? d.to : [d.to]) {
+        const a = findActor(to);
+        if (a?.id === actorId || recipients.includes(a?.id ?? "")) continue;
+        // Letters only reach people who read them; the throne is reached by memorial.
+        const reason =
+          a?.id === ids.ruler
+            ? "私信到不了御前，须上奏"
+            : a?.llm
+              ? undefined
+              : to
+                ? `无此收件人：${to}`
+                : "收信人不明";
+        if (reason) rejected.push({ type: "document", subject, reason });
+        else recipients.push(a!.id);
+      }
+    else recipients.push(ids.ruler);
     if (!recipients.length) {
-      rejected.push({ type: "document", subject, reason: "收信人不明" });
+      if (rejected.length === refused)
+        rejected.push({ type: "document", subject, reason: "收信人不明" });
       continue;
     }
     documents.push({
@@ -1152,7 +1159,7 @@ function applyDecision(
     for (const d of decision.drafts) {
       const edict = { kind: d.edict.kind, params: j(d.edict.params) } as Edict;
       const problem = pending.has(d.memorialId)
-        ? edictProblem(ctx.state, edict)
+        ? draftProblem(ctx.state, edict)
         : "no such pending memorial";
       if (problem) {
         rejected.push({
@@ -1257,7 +1264,7 @@ function dispositionProblem(
       if (!inbox) return "留中的本章只能呈上";
       if (!doc.draft || doc.kind !== "memorial")
         return "只有带票拟的外朝奏疏可以代批或发回";
-      return item.action === "proxy" && edictProblem(state, doc.draft.edict)
+      return item.action === "proxy" && draftProblem(state, doc.draft.edict)
         ? "票拟已无法施行"
         : undefined;
     default:

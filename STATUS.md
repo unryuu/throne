@@ -16,4 +16,6 @@ Checks: tests, types, formatting and build pass (the chunk-size advisory is non-
 
 Prompt caching (2026-10-06): NPC inputs now run stable identity, an append-only experience log, then the present; offline the cacheable prefix rose from 4–7% to 84–95% ([FEAT-0008](docs/issues/active/prompt-cache.md), real hit rate to be checked at the next live run).
 
-Next: see [HANDOFF.md](HANDOFF.md) — a fake-terminal experiment toward per-character agents ([FEAT-0009](docs/issues/active/agent-shell.md)), the Embroidered Guard rule, then the agent-based engine. Finance (C) and the cabinet-meeting opening (D) come after.
+Embroidered Guard rule (2026-10-06): only the emperor can dispatch the Guard, so Yan Song's drafts and Lü Fang's proxies cannot; letters to people nobody plays (the Guard, Shen Yishi) or to the emperor are returned to the sender. See [ADR 0007](docs/architecture/0007-directorate-daily-court.md).
+
+Next: see [HANDOFF.md](HANDOFF.md) — a fake-terminal experiment toward per-character agents ([FEAT-0009](docs/issues/active/agent-shell.md)), then the agent-based engine. Finance (C) and the cabinet-meeting opening (D) come after.

@@ -9,6 +9,7 @@ import {
   type CourtModel,
   type CourtModelRequest,
 } from "./npc.ts";
+import { draftProblem, edictProblem } from "./rules.ts";
 import { startCourtSession, type CourtSession } from "./session.ts";
 import type { CourtState } from "./types.ts";
 
@@ -550,6 +551,99 @@ describe("court session", () => {
     expect(report.text).toContain(
       `官府累计放赈${jiande.reliefDelivered}万石；沈一石以粮换田，出粮5万石。`,
     );
+  });
+
+  it("keeps the Embroidered Guard out of drafts and returns letters nobody reads", async () => {
+    const scripts: Record<string, Script> = {
+      ...defaultScripts,
+      [ids.yanSong]: (input) => ({
+        inner: "让锦衣卫去查。",
+        drafts: (
+          (input.memorialsAwaitingYourDraft as { memorialId: string }[]) ?? []
+        ).map((m) => ({
+          memorialId: m.memorialId,
+          edict: {
+            kind: "order_inquiry",
+            params: { countyId: "jiande", agent: "jinyiwei" },
+          },
+          text: "着锦衣卫查勘。",
+        })),
+      }),
+      [ids.zheng]: (_input, count) =>
+        count === 1
+          ? {
+              inner: "各处打点。",
+              documents: [
+                { kind: "memorial", subject: "请查建德疏", text: "请旨查勘。" },
+                {
+                  kind: "letter",
+                  to: [ids.yang, "沈一石", ids.jinyiwei, ids.ruler],
+                  subject: "打点",
+                  text: "诸事拜托。",
+                },
+                {
+                  kind: "letter",
+                  to: "沈一石",
+                  subject: "买田",
+                  text: "粮价压一压。",
+                },
+              ],
+            }
+          : { inner: "静观。" },
+    };
+    const session = await startCourtSession({
+      runId,
+      language: "zh-CN",
+      model: scriptedModel(scripts).model,
+    });
+    await play(session, followAll);
+    const state = session.state;
+
+    const yan = state.decisions.filter((d) => d.actorId === ids.yanSong);
+    expect(JSON.stringify(yan.map((d) => d.input))).not.toContain("jinyiwei");
+    expect(yan.flatMap((d) => d.rejected)[0]).toMatchObject({
+      type: "draft",
+      reason: "锦衣卫只听皇帝亲命，票拟派不动",
+    });
+    expect(
+      Object.values(state.documents).filter(
+        (d) => d.draft?.edict.params.agent === "jinyiwei",
+      ),
+    ).toEqual([]);
+
+    const zhengFirst = state.decisions.find((d) => d.actorId === ids.zheng)!;
+    const contacts = (zhengFirst.input.contacts as { id: string }[]).map(
+      (c) => c.id,
+    );
+    expect(contacts).not.toContain(ids.shen);
+    expect(contacts).not.toContain(ids.jinyiwei);
+    expect(zhengFirst.rejected.map((r) => r.reason)).toEqual([
+      "无此收件人：沈一石",
+      `无此收件人：${ids.jinyiwei}`,
+      "私信到不了御前，须上奏",
+      "无此收件人：沈一石",
+    ]);
+    const sent = zhengFirst.documentIds.map((id) => state.documents[id]!);
+    expect(sent.map((d) => [d.subject, d.toIds])).toEqual([
+      ["请查建德疏", [ids.ruler]],
+      ["打点", [ids.yang]],
+    ]);
+  });
+
+  it("lets only the emperor dispatch the Embroidered Guard", () => {
+    const state = createInitialState(runId);
+    const edict = {
+      kind: "order_inquiry" as const,
+      params: { countyId: "jiande", agent: "jinyiwei" },
+    };
+    expect(edictProblem(state, edict)).toBeUndefined();
+    expect(draftProblem(state, edict)).toBe("锦衣卫只听皇帝亲命，票拟派不动");
+    expect(
+      draftProblem(state, {
+        ...edict,
+        params: { ...edict.params, agent: "hu" },
+      }),
+    ).toBeUndefined();
   });
 
   it("lets Lü Fang return, proxy, summarise and hold papers within each party's knowledge", async () => {

@@ -5,7 +5,7 @@ import { countyIds, ids } from "./jiajing.ts";
 import {
   capabilitySpecs,
   countyFacts,
-  edictDescriptions,
+  draftEdictDescriptions,
   edictKinds,
 } from "./rules.ts";
 import type { CourtState } from "./types.ts";
@@ -388,13 +388,13 @@ export function buildNpcInput(
         }))
       : [],
     contacts: Object.values(state.actors)
-      .filter((a) => a.id !== actorId && a.id !== ids.ruler && a.name)
+      .filter((a) => a.id !== actorId && a.llm)
       .map((a) => ({ id: a.id, name: a.name, office: a.office })),
     ...(actorId === ids.yanSong
       ? {
           edictOptions: edictKinds.map((kind) => ({
             kind,
-            description: edictDescriptions[kind],
+            description: draftEdictDescriptions[kind],
           })),
         }
       : {}),
@@ -515,7 +515,7 @@ export function systemPrompt(
     "你只知道提供给你的信息。奏报、书信和传闻只是别人的说法，未必是真相；不要假定你知道别人心里想什么、私下做了什么。",
     "你可以想一套、说一套、做一套：",
     "- inner：你此刻真实的想法，第一人称，不超过150字。只有你自己知道。",
-    "- documents：你要发出的文书。memorial 是奏疏，经内阁票拟、司礼监转呈皇帝；secret_memorial 是密奏，不经内阁，由司礼监转呈；letter 是私信，须用 to 写明收信人 id（可以是 id 数组）。你只能用 documentKinds 里列出的文书种类。皇帝只看得到送到御前的文书，看不到你的内心和私信。",
+    "- documents：你要发出的文书。memorial 是奏疏，经内阁票拟、司礼监转呈皇帝；secret_memorial 是密奏，不经内阁，由司礼监转呈；letter 是私信，须用 to 写明收信人 id（可以是 id 数组），只能写给 contacts 里的人。你只能用 documentKinds 里列出的文书种类。皇帝只看得到送到御前的文书，看不到你的内心和私信。",
     "- actions：你实际要去做的事，只能从 capabilities 中选，parameters 须符合说明。可以什么都不做。",
     "一次最多发三份文书。文书用半文半白的明代公文口吻，每份不超过200字。行动的结果要等世界给出，不要声称事情已经办成。",
   ];
