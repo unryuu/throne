@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "@throne/shared-types";
-import { courtDecisionSchema } from "./npc.ts";
+import { ids } from "./jiajing.ts";
+import { courtDecisionSchema, type CourtModel } from "./npc.ts";
+import { startCourtSession } from "./session.ts";
 import {
   emptyShellState,
   runShell,
@@ -225,5 +227,115 @@ describe("agent shell", () => {
     const ended = runShell(input, state, "end <<'EOF'\n累了。\nEOF");
     expect(ended.isError).toBe(false);
     expect(ended.state.inner).toBe("累了。");
+  });
+});
+
+type Commands = (input: JsonObject, count: number) => string[];
+
+/** A court model that plays every actor through the terminal with fixed commands. */
+function terminalModel(scripts: Record<string, Commands>): CourtModel {
+  return async (request) => {
+    const input = JSON.parse(request.prompt.split("\n\n")[1]!) as JsonObject;
+    const count = Number(request.decisionEpisodeId.split(":").at(-1));
+    let state: ShellState = emptyShellState;
+    for (const command of [
+      ...(scripts[String(input.actorId)]?.(input, count) ?? []),
+      "end --text 今日无话。",
+    ]) {
+      const result = runShell(input, state, command);
+      if (result.isError) throw new Error(`${command}: ${result.output}`);
+      state = result.state;
+    }
+    return JSON.stringify(shellDecision(state));
+  };
+}
+
+const ids_ = (input: JsonObject, key: string, idKey: string) =>
+  ((input[key] as JsonObject[] | undefined) ?? []).map((x) => String(x[idKey]));
+
+describe("terminal days in a whole court run", () => {
+  it("lets every role do its duty through the terminal", async () => {
+    const model = terminalModel({
+      [ids.yanSong]: (input) =>
+        ids_(input, "memorialsAwaitingYourDraft", "memorialId").map(
+          (id) => `draft ${id} --edict acknowledge --text 知道了。`,
+        ),
+      [ids.lvFang]: (input, count) => [
+        ...ids_(input, "inbox", "documentId").map(
+          (id) => `dispose ${id} present`,
+        ),
+        ...(count === 1 ? ["report --text 浙江诸事，奴婢都盯着。"] : []),
+      ],
+      [ids.luBing]: (input) =>
+        ids_(input, "reportsAwaitingRouting", "reportId").map(
+          (id) => `route ${id} directorate --note 照实转呈`,
+        ),
+      [ids.zheng]: (_input, count) =>
+        count === 1
+          ? [
+              "cat abilities.txt | grep -c breach_dike",
+              "send memorial --subject 奉旨督办改稻为桑疏 --text 臣已督率各县。",
+              "act breach_dike --countyId jiande",
+            ]
+          : [],
+    });
+    const session = await startCourtSession({
+      runId: "11111111-2222-3333-4444-555555555555",
+      language: "zh-CN",
+      model,
+    });
+    for (let i = 0; !session.complete && i < 120; i += 1) {
+      const view = session.view;
+      await session.submit({
+        audienceId: view.audience!.id,
+        items: view.audience!.documents.map((d) =>
+          d.draft
+            ? { documentId: d.id, disposition: "follow_draft" as const }
+            : {
+                documentId: d.id,
+                disposition: "custom" as const,
+                edict: { kind: "acknowledge" as const, params: {} },
+              },
+        ),
+        specials:
+          i === 3
+            ? [
+                {
+                  edict: {
+                    kind: "order_inquiry" as const,
+                    params: { countyId: "jiande", agent: "jinyiwei" },
+                  },
+                },
+              ]
+            : [],
+      });
+    }
+    expect(session.complete).toBe(true);
+    const state = session.state;
+    const zheng = state.decisions.find((d) => d.actorId === ids.zheng)!;
+    expect(zheng.documentIds).toHaveLength(1);
+    expect(
+      zheng.actionIds.map((id) => state.actions[id]!.capabilityId),
+    ).toEqual(["breach_dike"]);
+    expect(
+      Object.values(state.documents).some(
+        (d) =>
+          d.subject === "奉旨督办改稻为桑疏" &&
+          d.draft?.edict.kind === "acknowledge",
+      ),
+    ).toBe(true);
+    const report = Object.values(state.documents).find(
+      (d) => d.fromId === ids.jinyiwei,
+    )!;
+    expect(report.route).toMatchObject({
+      channel: "directorate",
+      note: "照实转呈",
+    });
+    expect(
+      Object.values(state.documents).some(
+        (d) => d.directorate?.action === "present",
+      ),
+    ).toBe(true);
+    expect(state.decisions.every((d) => d.rejected.length === 0)).toBe(true);
   });
 });

@@ -42,6 +42,8 @@ import {
   countyFacts,
   draftProblem,
   edictProblem,
+  energyAvailable,
+  energyRules,
   isCountyId,
   repairSource,
   round1,
@@ -958,6 +960,7 @@ async function handleDecisions(
           sessionKey: `${options.runId}:${actorId}`,
           systemPrompt: systemPrompt(ctx.state, actorId, options.language),
           prompt: decisionPrompt(input),
+          input,
           ...(check ? { check } : {}),
         }),
       );
@@ -1026,6 +1029,8 @@ async function handleConverse(
       sessionKey: `${options.runId}:${ids.lvFang}`,
       systemPrompt: conversationSystemPrompt(ctx.state, options.language),
       prompt: decisionPrompt(input),
+      input,
+      converse: true,
       check,
     }),
   );
@@ -1055,12 +1060,14 @@ function applyDecision(
       (a) => a.id === to || (to !== undefined && a.name === to),
     );
   const decisionEpisodeId = String(input.decisionEpisodeId);
+  let energy = final ? Infinity : energyAvailable(ctx.state, actorId, ctx.time);
+  const tired = "精力不济，今天办不了这么多";
   for (const [index, d] of decision.documents.entries()) {
-    if (index >= 4) {
+    if (index >= energyRules.documents || energy < 1) {
       rejected.push({
         type: "document",
         subject: d.subject ?? d.text.slice(0, 16),
-        reason: "一次最多发四份文书",
+        reason: energy < 1 ? tired : "一次最多发三份文书",
       });
       continue;
     }
@@ -1098,6 +1105,7 @@ function applyDecision(
         rejected.push({ type: "document", subject, reason: "收信人不明" });
       continue;
     }
+    energy -= 1;
     documents.push({
       id: nextDocumentId(ctx.state, documents.length),
       kind,
@@ -1112,7 +1120,7 @@ function applyDecision(
   const gaps: PrimitiveGap[] = [];
   for (const [index, a] of decision.actions.entries()) {
     const parameters = j(a.parameters);
-    if (index >= 3) {
+    if (index >= energyRules.actions) {
       rejected.push({
         type: "action",
         capabilityId: a.capabilityId,
@@ -1131,6 +1139,15 @@ function applyDecision(
       });
       continue;
     }
+    if (energy < 1) {
+      rejected.push({
+        type: "action",
+        capabilityId: a.capabilityId,
+        reason: tired,
+      });
+      continue;
+    }
+    energy -= 1;
     const problem = actionProblem(
       ctx.state,
       actor,

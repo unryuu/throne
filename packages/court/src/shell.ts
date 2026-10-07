@@ -22,6 +22,12 @@ export type ShellState = {
   readonly commands: number;
   readonly documents: readonly ShellDocument[];
   readonly actions: readonly ShellAction[];
+  /** Duty work: Yan Song's drafts, Lü Fang's dispositions and words, Lu Bing's routes. */
+  readonly drafts?: readonly JsonObject[];
+  readonly dispositions?: readonly JsonObject[];
+  readonly routes?: readonly JsonObject[];
+  readonly report?: string;
+  readonly interrupt?: string;
   /** Set by `end`; the day is over once it is. */
   readonly inner?: string;
 };
@@ -32,6 +38,28 @@ export type ShellResult = {
 };
 
 export const shellLimits = { documents: 3, actions: 3, commands: 30 };
+
+/** Desk papers for the actors with a duty, shown under desk/. */
+const deskFiles: Readonly<Record<string, string>> = {
+  memorialsAwaitingYourDraft: "待票拟",
+  inbox: "待处置",
+  held: "留中",
+  cabinetBacklog: "内阁积压",
+  standingOrders: "口谕",
+  emperor: "皇上",
+  reportsAwaitingRouting: "待转呈原报",
+};
+
+type Option = { kind: string; description: string };
+const options = (value: JsonValue | undefined): Option[] =>
+  Array.isArray(value)
+    ? (value as Option[])
+    : value && typeof value === "object"
+      ? Object.entries(value).map(([kind, d]) => ({
+          kind,
+          description: String(d),
+        }))
+      : [];
 
 export const emptyShellState: ShellState = {
   cwd: "/",
@@ -110,19 +138,74 @@ export function shellFiles(input: JsonObject): Files {
   used.add("provinceReports");
   for (const report of arr<JsonObject>(input.provinceReports))
     files.set(`/province/${String(report.county)}.txt`, render(report) + "\n");
+  const logFile = new Map<number, string>();
   for (const entry of arr<JsonObject>(input.log)) {
     const { n, type, ...rest } = entry;
+    const path = `log/${pad(Number(n))}-${String(type)}.txt`;
+    logFile.set(Number(n), path);
+    files.set(`/${path}`, render(rest as JsonObject) + "\n");
+  }
+  for (const [key, name] of Object.entries(deskFiles)) {
+    if (input[key] === undefined) continue;
+    used.add(key);
+    // Papers point at their text in the log instead of repeating it.
+    const value = JSON.parse(
+      JSON.stringify(input[key]).replace(
+        /"textInLogEntry":(\d+)/g,
+        (_, n: string) =>
+          `"原文":${JSON.stringify(logFile.get(Number(n)) ?? `log 第 ${n} 条`)}`,
+      ),
+    ) as JsonValue;
+    files.set(`/desk/${name}.txt`, render(value) + "\n");
+  }
+  const duty: [string, string][] = [
+    ["edictOptions", "票拟可选的敕令（draft --edict）"],
+    ["dispositionOptions", "处置本章的办法（dispose）"],
+    ["routeOptions", "转呈原报的路子（route）"],
+  ];
+  for (const [key, title] of duty) {
+    if (input[key] === undefined) continue;
+    used.add(key);
     files.set(
-      `/log/${pad(Number(n))}-${String(type)}.txt`,
-      render(rest as JsonObject) + "\n",
+      "/abilities.txt",
+      files.get("/abilities.txt")! +
+        `\n${title}：\n` +
+        options(input[key])
+          .map((o) => `  ${o.kind}：${o.description}`)
+          .join("\n") +
+        "\n",
     );
   }
+  used.add("energy");
   for (const key of Object.keys(input))
     if (!used.has(key)) put(`/other/${key}.txt`, key);
   return files;
 }
 
-export function shellHelp(): string {
+export function shellHelp(input: JsonObject = {}): string {
+  const role: string[] = [];
+  if (input.memorialsAwaitingYourDraft !== undefined)
+    role.push(
+      "票拟（本职，不花精力；不票拟的奏疏压在内阁，皇上看不到）：",
+      "  draft doc-12 --edict order_relief --countyId jiande --text 替皇上拟的批语",
+      "  待票拟的奏疏见 desk/待票拟.txt，敕令和参数见 abilities.txt；敕令参数写成 --名 值。",
+    );
+  if (input.dispositionOptions !== undefined)
+    role.push(
+      "处置本章（本职，不花精力；没处置的仍留在你手里）：",
+      "  dispose doc-12 present          呈览；办法见 abilities.txt",
+      "  dispose doc-12 summarize --text 口奏摘要",
+      "  report --text 口奏给皇上的话（皇上下次理事时听到）",
+      "  interrupt --reason 为何要请皇上出关（只在皇上闭关时有用，皇上可能不见）",
+      "  本章见 desk/待处置.txt、desk/留中.txt；内阁积压只知来人和题目。",
+    );
+  if (input.reportsAwaitingRouting !== undefined)
+    role.push(
+      "转呈原报（本职，不花精力；每份原报都必须选路，选完才能收笔）：",
+      "  route doc-30 directorate --note 附给皇上的话",
+      "  route doc-30 direct --interrupt   直接面圣；皇上闭关时 --interrupt 请求打断修道",
+      "  原报一字不能改，见 desk/待转呈原报.txt。",
+    );
   return [
     "这是你的终端。文件只读，是你此刻所知的一切；命令就是你今天能做的事。",
     "",
@@ -134,6 +217,7 @@ export function shellHelp(): string {
     "  abilities.txt   你能发的文书和能办的事",
     "  resources.txt   你手里的钱粮",
     "  policy.txt      你所知的朝廷旨意",
+    ...(role.length ? ["  desk/           你案头待办的本章"] : []),
     "",
     "查阅：ls cat head tail grep wc sed -n echo，可用管道 |、&&、for 循环。",
     "",
@@ -146,6 +230,8 @@ export function shellHelp(): string {
     "办事（今日最多三件）：",
     "  act repair_dike --countyId tonglu --description 补充说明",
     "  参数名和取值见 abilities.txt。",
+    ...(role.length ? [...role, ""] : []),
+    "写信、上奏、办事各花 1 点精力，今天剩多少见 pending；本职工作不花。",
     "pending 看今天已排的文书和事，cancel 编号 撤回一项。",
     "",
     "收笔（必须，收笔后今天就过去了）：",
@@ -167,9 +253,14 @@ export function shellGreeting(input: JsonObject): string {
     typeof first === "number"
       ? `你上次决定之后，新的经历有 ${fresh} 条，从 log/${pad(first)} 起。`
       : "上次决定之后没有新的经历。";
-  return [`${String(input.now)}。${news}`, "", "$ help", shellHelp()].join(
-    "\n",
-  );
+  const energy = (input.energy as JsonObject | undefined)?.available;
+  const today = typeof energy === "number" ? `今天你有 ${energy} 点精力。` : "";
+  return [
+    `${String(input.now)}。${news}${today}`,
+    "",
+    "$ help",
+    shellHelp(input),
+  ].join("\n");
 }
 
 // ---------- parsing ----------
@@ -705,6 +796,20 @@ function longOptions(argv: string[]): {
   return { positional, opts };
 }
 
+/** Energy left today, or undefined when the actor has no energy limit (an arrested man's last word). */
+function energyLeft(ctx: Ctx): number | undefined {
+  const available = (ctx.input.energy as JsonObject | undefined)?.available;
+  return typeof available === "number"
+    ? available - ctx.state.documents.length - ctx.state.actions.length
+    : undefined;
+}
+
+function spend(ctx: Ctx): void {
+  const left = energyLeft(ctx);
+  if (left !== undefined && left < 1)
+    throw new Error("精力不济，今天办不了更多了；可先 cancel 撤回一项");
+}
+
 function send(ctx: Ctx, argv: string[], io: Io): Out {
   const kinds = arr<string>(ctx.input.documentKinds);
   const kind = argv[0];
@@ -714,6 +819,7 @@ function send(ctx: Ctx, argv: string[], io: Io): Out {
     );
   if (!kinds.includes(kind))
     throw new Error(`你没有 ${kind} 这种文书渠道，可用：${kinds.join("、")}`);
+  spend(ctx);
   if (ctx.state.documents.length >= shellLimits.documents)
     throw new Error(
       `今天已排了 ${shellLimits.documents} 份文书，不能再发；可先 cancel 撤回`,
@@ -773,6 +879,7 @@ function act(ctx: Ctx, argv: string[]): Out {
     );
   const cap = caps.find((c) => c.id === id);
   if (!cap) throw new Error(`没有 ${id} 这件事可办，见 abilities.txt`);
+  spend(ctx);
   if (ctx.state.actions.length >= shellLimits.actions)
     throw new Error(
       `今天已排了 ${shellLimits.actions} 件事，不能再办；可先 cancel 撤回`,
@@ -821,15 +928,157 @@ function pending(ctx: Ctx): Out {
     (x, i) =>
       `A${i + 1}  ${x.capabilityId} ${JSON.stringify(x.parameters)}${x.description ? `  ${x.description}` : ""}`,
   );
+  const left = energyLeft(ctx);
+  const duty = [
+    ...(ctx.state.drafts ?? []).map(
+      (x) =>
+        `票拟 ${String(x.memorialId)}：${JSON.stringify(x.edict)} ${String(x.text)}`,
+    ),
+    ...(ctx.state.dispositions ?? []).map(
+      (x) =>
+        `处置 ${String(x.documentId)}：${String(x.action)}${x.text ? ` ${String(x.text)}` : ""}`,
+    ),
+    ...(ctx.state.routes ?? []).map(
+      (x) =>
+        `转呈 ${String(x.reportId)}：${String(x.channel)}${x.interrupt ? " 请求打断" : ""}${x.note ? ` ${String(x.note)}` : ""}`,
+    ),
+    ...(ctx.state.report ? [`口奏：${ctx.state.report}`] : []),
+    ...(ctx.state.interrupt ? [`请皇上出关：${ctx.state.interrupt}`] : []),
+  ];
   return {
     code: 0,
     out: [
+      ...(left !== undefined ? [`精力剩 ${left} 点`] : []),
       `文书 ${d.length}/${shellLimits.documents}`,
       ...d,
       `办事 ${a.length}/${shellLimits.actions}`,
       ...a,
+      ...(duty.length ? ["本职（不花精力）", ...duty] : []),
     ].join("\n"),
   };
+}
+
+function item(
+  ctx: Ctx,
+  key: string,
+  idKey: string,
+  id: string | undefined,
+  what: string,
+): JsonObject {
+  const list = arr<JsonObject>(ctx.input[key]);
+  const found = list.find((x) => x[idKey] === id);
+  if (!found)
+    throw new Error(
+      `${id ?? "（未写编号）"} 不在${what}里，可选：${list.map((x) => String(x[idKey])).join("、") || "（无）"}`,
+    );
+  return found;
+}
+
+/** Duty entries replace an earlier one for the same paper. */
+function upsert(
+  list: readonly JsonObject[] | undefined,
+  idKey: string,
+  entry: JsonObject,
+): JsonObject[] {
+  return [...(list ?? []).filter((x) => x[idKey] !== entry[idKey]), entry];
+}
+
+function draft(ctx: Ctx, argv: string[], io: Io): Out {
+  const [memorialId, ...rest] = argv;
+  item(
+    ctx,
+    "memorialsAwaitingYourDraft",
+    "memorialId",
+    memorialId,
+    "待票拟的奏疏",
+  );
+  const { positional, opts } = longOptions(rest);
+  const kind = opts.get("edict")?.[0];
+  const kinds = options(ctx.input.edictOptions).map((o) => o.kind);
+  if (!kind || !kinds.includes(kind))
+    throw new Error(`--edict 须取 ${kinds.join("、")}`);
+  const text = (
+    opts.get("text")?.join("\n") ??
+    (positional.length ? positional.join(" ") : io.stdin) ??
+    ""
+  ).trim();
+  if (!text) throw new Error("缺少 --text 票拟批语");
+  if (text.length > 600) throw new Error("批语太长");
+  const params: JsonObject = Object.fromEntries(
+    [...opts]
+      .filter(([k]) => k !== "edict" && k !== "text")
+      .map(([k, v]) => [k, parseValue(v[0]!)]),
+  );
+  const entry = { memorialId: memorialId!, edict: { kind, params }, text };
+  ctx.state = {
+    ...ctx.state,
+    drafts: upsert(ctx.state.drafts, "memorialId", entry),
+  };
+  return {
+    code: 0,
+    out: `已票拟 ${memorialId}：${kind} ${JSON.stringify(params)}。收笔后送司礼监；敕令能否施行由朝廷规矩核对。`,
+  };
+}
+
+function dispose(ctx: Ctx, argv: string[]): Out {
+  const [documentId, action, ...rest] = argv;
+  const inInbox = arr<JsonObject>(ctx.input.inbox).some(
+    (x) => x.documentId === documentId,
+  );
+  if (!inInbox)
+    item(ctx, "held", "documentId", documentId, "待处置或留中的本章");
+  const actions = options(ctx.input.dispositionOptions).map((o) => o.kind);
+  if (!action || !actions.includes(action))
+    throw new Error(`处置办法须取 ${actions.join("、")}`);
+  const { positional, opts } = longOptions(rest);
+  const text = (opts.get("text")?.join("\n") ?? positional.join(" ")).trim();
+  const entry: JsonObject = {
+    documentId: documentId!,
+    action,
+    ...(text ? { text } : {}),
+  };
+  ctx.state = {
+    ...ctx.state,
+    dispositions: upsert(ctx.state.dispositions, "documentId", entry),
+  };
+  return { code: 0, out: `已处置 ${documentId}：${action}。收笔后生效。` };
+}
+
+function said(argv: string[], io: Io, option: string, max: number): string {
+  const { positional, opts } = longOptions(argv);
+  const text = (
+    opts.get(option)?.join("\n") ??
+    (positional.length ? positional.join(" ") : io.stdin) ??
+    ""
+  ).trim();
+  if (!text) throw new Error(`缺少 --${option}`);
+  if (text.length > max) throw new Error("太长了，写短些");
+  return text;
+}
+
+function route(ctx: Ctx, argv: string[]): Out {
+  const [reportId, channel, ...rest] = argv;
+  item(ctx, "reportsAwaitingRouting", "reportId", reportId, "待转呈的原报");
+  const channels = options(ctx.input.routeOptions).map((o) => o.kind);
+  if (!channel || !channels.includes(channel))
+    throw new Error(`路子须取 ${channels.join("、")}`);
+  const interrupt = rest.includes("--interrupt");
+  const { positional, opts } = longOptions(
+    rest.filter((a) => a !== "--interrupt"),
+  );
+  const note = (opts.get("note")?.join("\n") ?? positional.join(" ")).trim();
+  if (note.length > 400) throw new Error("附言太长");
+  const entry: JsonObject = {
+    reportId: reportId!,
+    channel,
+    ...(note ? { note } : {}),
+    ...(interrupt ? { interrupt: true } : {}),
+  };
+  ctx.state = {
+    ...ctx.state,
+    routes: upsert(ctx.state.routes, "reportId", entry),
+  };
+  return { code: 0, out: `原报 ${reportId} 走 ${channel}。收笔后送出。` };
 }
 
 function cancel(ctx: Ctx, argv: string[]): Out {
@@ -853,6 +1102,11 @@ function end(ctx: Ctx, argv: string[], io: Io): Out {
     ""
   ).trim();
   if (!inner) throw new Error("用法：end --text 你此刻真实的想法");
+  const unrouted = arr<JsonObject>(ctx.input.reportsAwaitingRouting)
+    .map((r) => String(r.reportId))
+    .filter((id) => !(ctx.state.routes ?? []).some((x) => x.reportId === id));
+  if (unrouted.length)
+    throw new Error(`还有原报没选路：${unrouted.join("、")}；原报不能压下`);
   if (inner.length > 1200) throw new Error("太长了，写短些");
   ctx.state = { ...ctx.state, inner };
   return {
@@ -867,7 +1121,7 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
   const local = { stdin };
   switch (name) {
     case "help":
-      return { out: shellHelp(), code: 0 };
+      return { out: shellHelp(ctx.input), code: 0 };
     case "ls":
       return ls(ctx, args);
     case "cat":
@@ -919,6 +1173,22 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
       return cancel(ctx, args);
     case "end":
       return end(ctx, args, local);
+    case "draft":
+      return draft(ctx, args, local);
+    case "dispose":
+      return dispose(ctx, args);
+    case "route":
+      return route(ctx, args);
+    case "report":
+      if (ctx.input.dispositionOptions === undefined)
+        throw new Error("你没有口奏的门路");
+      ctx.state = { ...ctx.state, report: said(args, local, "text", 1500) };
+      return { code: 0, out: "口奏已备好，皇上下次理事时听到。" };
+    case "interrupt":
+      if (ctx.input.dispositionOptions === undefined)
+        throw new Error("你没有请皇上出关的门路");
+      ctx.state = { ...ctx.state, interrupt: said(args, local, "reason", 300) };
+      return { code: 0, out: "收笔后递进去，皇上见不见不一定。" };
     default:
       return {
         out: "",
@@ -1032,6 +1302,11 @@ export function shellDecision(state: ShellState): JsonObject {
       parameters: a.parameters,
       ...(a.description ? { description: a.description } : {}),
     })),
+    drafts: [...(state.drafts ?? [])],
+    dispositions: [...(state.dispositions ?? [])],
+    routes: [...(state.routes ?? [])],
+    ...(state.report ? { report: state.report } : {}),
+    ...(state.interrupt ? { interrupt: { reason: state.interrupt } } : {}),
   };
 }
 
@@ -1045,6 +1320,9 @@ export function shellSystemPrompt(input: JsonObject): string {
     "你面前是一台终端（bash 工具）。文件是你此刻所知的一切，命令就是你今天能做的事：查阅用 ls、cat、grep 等，发文书用 send，办事用 act。",
     "今天你看到的是今早的情形。发出的文书和办的事要等你收笔后世界才给出结果，不要声称事情已经办成。可以什么都不做。",
     "文书用半文半白的明代公文口吻，每份不超过200字。",
+    ...(input.dispositionOptions !== undefined
+      ? ["口奏可以报喜不报忧，但皇上另有耳目。"]
+      : []),
     "办完了用 end 收笔，写下你此刻真实的想法：第一人称，不超过150字，只有你自己知道。收笔后今天就过去了。",
     "用中文书写。",
   ].join("\n");

@@ -12,6 +12,7 @@
 - [连续短局](architecture/0005-continuous-crisis.md)：两次决策、命令历史、人物记忆与御前时间线。
 - [奏疏流转](architecture/0006-court-memorials.md)：朝廷场景、想/说/做、批红与行动校验。
 - [司礼监与每日理事](architecture/0007-directorate-daily-court.md)：吕芳处置文书、陆炳转呈原报、闭关与打断。
+- [终端人物与精力](architecture/0008-terminal-actors.md)：人物经假终端过一天，写信做事花精力。
 - [issues](issues/README.md)：当前缺陷和功能；小型整理用提交说明交代。
 
 事后追溯：`issues/archive/`、Git 历史和已关闭 PR。保留调查、取舍和验证结果，不要求日常重读。

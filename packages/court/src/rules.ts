@@ -172,6 +172,43 @@ export function draftProblem(
   return edictProblem(state, edict);
 }
 
+/** 行动力: what writing and doing cost an actor; duty work and an arrested man's last word are free. */
+export const energyRules = {
+  perDay: 2,
+  cap: 4,
+  documents: 3,
+  actions: 3,
+  note: "写信、上奏、密奏、办一件事各花 1 点；票拟、处置本章、转呈原报、口奏不花。每日恢复 2 点，最多攒 4 点。",
+};
+
+const dayOf = (time: number) => Math.floor(time / 12);
+
+/** Derived from the actor's decision history, so old saves need no migration. */
+export function energyAvailable(
+  state: CourtState,
+  actorId: string,
+  time: number,
+): number {
+  let energy = energyRules.cap;
+  let day: number | undefined;
+  const rest = (until: number) => {
+    if (day !== undefined)
+      energy = Math.min(
+        energyRules.cap,
+        energy + energyRules.perDay * (dayOf(until) - day),
+      );
+    day = dayOf(until);
+  };
+  for (const d of state.decisions) {
+    if (d.actorId !== actorId) continue;
+    rest(d.at);
+    if (!d.final)
+      energy = Math.max(0, energy - d.documentIds.length - d.actionIds.length);
+  }
+  rest(time);
+  return energy;
+}
+
 /** Practical feasibility check for an NPC action at decision time. */
 export function actionProblem(
   state: CourtState,

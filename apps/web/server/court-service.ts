@@ -19,6 +19,7 @@ import {
 } from "@throne/court";
 import type { SimulationRecord } from "@throne/shared-types";
 import type { Locale } from "@throne/localization";
+import { createTerminalCourtModel } from "./terminal-model.ts";
 
 export type CourtSnapshot = {
   id: string;
@@ -60,8 +61,11 @@ export class CourtService {
   readonly entries = new Map<string, Entry>();
   constructor(
     readonly root: string,
+    // THRONE_NPC_MODE=form keeps the one-shot reply for comparison runs.
     readonly modelFactory: CourtModelFactory = (trace) =>
-      createLiveTextModel(root, trace),
+      process.env.THRONE_NPC_MODE === "form"
+        ? createLiveTextModel(root, trace)
+        : createTerminalCourtModel(root, trace),
   ) {}
 
   private path(id: string): string {
