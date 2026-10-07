@@ -51,6 +51,34 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sim-core
 
+  apps/spectator:
+    dependencies:
+      '@throne/court':
+        specifier: workspace:*
+        version: link:../../packages/court
+      '@throne/localization':
+        specifier: workspace:*
+        version: link:../../packages/localization
+      '@vitejs/plugin-react':
+        specifier: ^6.1.1
+        version: 6.1.1(vite@8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.1))
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+
   apps/web:
     dependencies:
       '@throne/agent-runtime':

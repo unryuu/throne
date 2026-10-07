@@ -8,13 +8,14 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "pnpm typecheck && pnpm --filter @throne/web build",
+    "build": "pnpm typecheck && pnpm --filter @throne/web --filter @throne/spectator build",
     "demo": "pnpm --filter @throne/sim-cli demo",
     "dev": "pnpm --filter @throne/web dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "spectator": "pnpm --filter @throne/spectator dev"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

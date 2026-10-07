@@ -6,6 +6,18 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "pnpm@11.19.0", "dev"],
       "port": 4173
+    },
+    {
+      "name": "throne-spectator",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "-y",
+        "pnpm@11.19.0",
+        "--filter",
+        "@throne/spectator",
+        "dev"
+      ],
+      "port": 4174
     }
   ]
 }
