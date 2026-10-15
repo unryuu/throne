@@ -1,3 +1,11 @@
+import {
+  briefAuthors,
+  generateFacts,
+  imperialEnergy,
+  imperialRules,
+  bureauPrompt,
+  parseBureau,
+} from "./information.ts";
 import type {
   DomainEvent,
   JsonObject,
@@ -10,7 +18,14 @@ import type {
   DomainModel,
   ScheduledEventDraft,
 } from "@throne/sim-core";
-import { CHEN, WU, days, nextShichen, roll } from "./calendar.ts";
+import {
+  CHEN,
+  WU,
+  days,
+  formatCourtTime,
+  nextShichen,
+  roll,
+} from "./calendar.ts";
 import {
   conversationRounds,
   countyIds,
@@ -88,6 +103,7 @@ export type RescriptSubmission = {
 export type AudienceAction =
   | { readonly type: "converse"; readonly message: string }
   | { readonly type: "reveal"; readonly documentId: string }
+  | { readonly type: "open_message"; readonly documentId: string }
   | { readonly type: "admit" };
 
 type Options = {
@@ -220,6 +236,22 @@ function sendDocument(
   document: Omit<CourtDocument, "arrivals" | "deliveredTo" | "sentAt">,
   fromLocation = locationOf(ctx.state, document.fromId),
 ): void {
+  if (
+    document.kind === "brief" ||
+    document.kind === "bureau" ||
+    document.kind === "oral"
+  ) {
+    ctx.commit("document.sent", {
+      document: j({
+        ...document,
+        sentAt: ctx.time,
+        arrivals: { [ids.ruler]: ctx.time },
+        deliveredTo: [ids.ruler],
+        readyForRulerAt: ctx.time,
+      }),
+    });
+    return;
+  }
   const arrivals: Record<string, SimTime> = {};
   for (const to of document.toIds) {
     const delay = travelDays(
@@ -419,6 +451,29 @@ function handleRescript(
   }
   if (interruption && !interruption.admitted)
     throw new Error("Admit or decline the interruption first");
+  if (ctx.state.information) {
+    for (const item of submission.items)
+      if (
+        item.disposition === "follow_draft" &&
+        item.text?.trim() &&
+        item.text.trim() !==
+          ctx.state.documents[item.documentId]?.draft?.text.trim()
+      )
+        throw new Error("改写票拟须选择改批（花1点精力）");
+    const cost =
+      submission.specials.length +
+      submission.items.filter((i) => i.disposition === "custom").length;
+    spendImperial(ctx, cost, "edicts");
+    ctx.commit("information.reading_closed", {
+      audienceId: audience.id,
+      opened: audience.documentIds.filter(
+        (id) => ctx.state.documents[id]?.openedAt !== undefined,
+      ),
+      unopened: audience.documentIds.filter(
+        (id) => ctx.state.documents[id]?.openedAt === undefined,
+      ),
+    });
+  }
   const byId = new Map(submission.items.map((i) => [i.documentId, i]));
   for (const key of byId.keys())
     if (!audience.documentIds.includes(key))
@@ -506,6 +561,13 @@ function deskContents(state: CourtState) {
           d.onDeskAt === undefined &&
           d.rescript === undefined,
       )
+      .sort(
+        (a, b) =>
+          (state.information
+            ? Number(b.kind === "bureau") - Number(a.kind === "bureau")
+            : 0) || a.readyForRulerAt! - b.readyForRulerAt!,
+      )
+      .slice(0, state.information ? imperialRules.maxMessages : Infinity)
       .map((d) => d.id),
     oralReportIds: state.oralReports.filter((r) => !r.heard).map((r) => r.id),
   };
@@ -578,21 +640,37 @@ function handleAudienceAction(
     return;
   }
   const doc = ctx.state.documents[action.documentId];
+  if (action.type === "open_message") {
+    if (
+      !ctx.state.information ||
+      !doc ||
+      doc.onDeskAt === undefined ||
+      doc.openedAt !== undefined
+    )
+      throw new Error("这条消息不能展开");
+    spendImperial(ctx, 1, "read");
+    ctx.commit("information.message_opened", { documentId: doc.id });
+    return;
+  }
   if (
     !doc ||
-    !audience.documentIds.includes(doc.id) ||
+    (ctx.state.information
+      ? doc.onDeskAt === undefined || doc.openedAt === undefined
+      : !audience.documentIds.includes(doc.id)) ||
     doc.directorate?.action !== "summarize" ||
     doc.revealedAt !== undefined
   )
     throw new Error("This paper has no folded original to call for");
+  if (ctx.state.information) spendImperial(ctx, 1, "original");
   ctx.commit("document.revealed", { documentId: doc.id });
-  observe(
-    ctx,
-    ids.lvFang,
-    "original_called_for",
-    { content: `皇上调阅了《${doc.subject}》原本。` },
-    false,
-  );
+  if (!ctx.state.information)
+    observe(
+      ctx,
+      ids.lvFang,
+      "original_called_for",
+      { content: `皇上调阅了《${doc.subject}》原本。` },
+      false,
+    );
 }
 
 function handleArrival(ctx: Context, documentId: string, actorId: string) {
@@ -1034,6 +1112,8 @@ async function handleConverse(
   const rounds = audience.conversation.filter((c) => c.role === "ruler");
   if (rounds.length >= conversationRounds)
     throw new Error("No more rounds of conversation today");
+  if (ctx.state.information && rounds.length === 0)
+    spendImperial(ctx, 1, "conversation");
   const text = message.trim();
   if (!text || text.length > 400) throw new Error("Say something shorter");
   const input: JsonObject = {
@@ -1090,7 +1170,13 @@ function applyDecision(
   let energy = final ? Infinity : energyAvailable(ctx.state, actorId, ctx.time);
   const tired = "精力不济，今天办不了这么多";
   for (const [index, d] of decision.documents.entries()) {
-    if (index >= energyRules.documents || energy < 1) {
+    const free = d.kind === "brief";
+    if (
+      (!free &&
+        decision.documents.slice(0, index).filter((x) => x.kind !== "brief")
+          .length >= energyRules.documents) ||
+      (!free && energy < 1)
+    ) {
       rejected.push({
         type: "document",
         subject: d.subject ?? d.text.slice(0, 16),
@@ -1108,6 +1194,42 @@ function applyDecision(
       continue;
     }
     const subject = d.subject?.trim() || d.text.slice(0, 16);
+    if (
+      kind === "brief" &&
+      (!d.subject?.trim() ||
+        subject.length > 20 ||
+        d.text.length > 150 ||
+        documents.some((x) => x.kind === "brief") ||
+        Object.values(ctx.state.documents).some(
+          (x) =>
+            x.kind === "brief" &&
+            x.fromId === actorId &&
+            Math.floor(x.sentAt / 12) === Math.floor(ctx.time / 12),
+        ))
+    ) {
+      rejected.push({
+        type: "document",
+        subject,
+        reason: "条子每日最多一条，标题≤20字、正文≤150字",
+      });
+      continue;
+    }
+    if (
+      d.rumorIds?.some(
+        (id) =>
+          actorId !== ids.luBing ||
+          !ctx.state.information?.facts.some(
+            (f) => f.id === id && f.channel === "rumor",
+          ),
+      )
+    ) {
+      rejected.push({
+        type: "document",
+        subject,
+        reason: "风闻编号不在你的案头",
+      });
+      continue;
+    }
     const recipients: string[] = [];
     const refused = rejected.length;
     if (kind === "letter")
@@ -1132,7 +1254,7 @@ function applyDecision(
         rejected.push({ type: "document", subject, reason: "收信人不明" });
       continue;
     }
-    energy -= 1;
+    if (!free) energy -= 1;
     documents.push({
       id: nextDocumentId(ctx.state, documents.length),
       kind,
@@ -1140,6 +1262,7 @@ function applyDecision(
       toIds: recipients,
       subject,
       text: d.text,
+      ...(d.rumorIds ? { rumorIds: d.rumorIds } : {}),
       decisionEpisodeId,
     });
   }
@@ -1234,6 +1357,13 @@ function applyDecision(
         subject: ctx.state.documents[d.documentId]?.subject ?? d.documentId,
         reason: dispositionProblem(ctx.state, d) ?? "重复处置",
       });
+  if (
+    ctx.state.information &&
+    actorId === ids.lvFang &&
+    decision.report?.trim() &&
+    !decision.reportSubject?.trim()
+  )
+    rejected.push({ type: "report", reason: "口奏须自拟标题，最多20字" });
   const record: CourtDecisionRecord = {
     decisionEpisodeId,
     actorId,
@@ -1262,8 +1392,20 @@ function applyDecision(
   for (const { item } of dispositions)
     applyDisposition(ctx, options, item, mode === "converse");
   if (actorId === ids.lvFang && mode !== "converse") {
-    if (decision.report?.trim())
-      ctx.commit("court.oral_report", { text: decision.report.trim() });
+    if (decision.report?.trim()) {
+      if (ctx.state.information) {
+        if (decision.reportSubject?.trim())
+          sendDocument(ctx, {
+            id: nextDocumentId(ctx.state),
+            kind: "oral",
+            fromId: actorId,
+            toIds: [ids.ruler],
+            subject: decision.reportSubject.trim(),
+            text: decision.report.trim(),
+            decisionEpisodeId,
+          });
+      } else ctx.commit("court.oral_report", { text: decision.report.trim() });
+    }
     if (decision.interrupt?.reason.trim())
       requestInterruption(ctx, actorId, decision.interrupt.reason.trim());
   }
@@ -1383,9 +1525,86 @@ function applyDisposition(
     inAudience &&
     item.action !== "hold" &&
     audience &&
-    (!audience.interruption || audience.interruption.admitted)
+    (!audience.interruption || audience.interruption.admitted) &&
+    (!ctx.state.information ||
+      audience.documentIds.length < imperialRules.maxMessages)
   )
     ctx.commit("court.desk_added", { documentId: doc.id });
+}
+
+function spendImperial(ctx: Context, cost: number, purpose: string) {
+  if (cost > imperialEnergy(ctx.state, ctx.time))
+    throw new Error("皇帝今日精力不足");
+  if (cost) ctx.commit("information.spent", { cost, purpose });
+}
+
+function dailyInformation(ctx: Context) {
+  const day = Math.floor(ctx.time / 12);
+  const count = 1 + Math.floor(roll(ctx.state.seed, `rumors:${day}`) * 3);
+  ctx.commit("information.rumors", {
+    facts: j(generateFacts(ctx.state, day, "rumor", count)),
+  });
+  for (const actorId of briefAuthors) wake(ctx, actorId);
+  const next = (day + 1) * 12;
+  if (next < ctx.state.endsAt) ctx.later("information.daily", next, {});
+}
+
+function prepareBureau(ctx: Context, schedule = true) {
+  const day = Math.floor(ctx.time / 12);
+  if (ctx.state.information!.bureauDays.includes(day)) {
+    if (schedule) openAudience(ctx);
+    return;
+  }
+  const pending = deskContents(ctx.state).documentIds.length;
+  const target = Math.min(
+    imperialRules.maxMessages,
+    Math.max(
+      pending + 1,
+      imperialRules.minMessages +
+        Math.floor(
+          roll(ctx.state.seed, `inbox-size:${day}`) *
+            (imperialRules.maxMessages - imperialRules.minMessages + 1),
+        ),
+    ),
+  );
+  const count = Math.max(1, target - pending);
+  ctx.commit("information.bureau_prepared", {
+    facts: j(generateFacts(ctx.state, day, "bureau", count)),
+  });
+  if (schedule) ctx.later("information.compose", ctx.time, { day });
+}
+
+async function composeBureau(ctx: Context, options: Options, day: number) {
+  if (ctx.state.information!.bureauDays.includes(day)) return;
+  const facts = ctx.state.information!.facts.filter(
+    (f) => f.day === day && f.channel === "bureau",
+  );
+  if (!facts.length) throw new Error("通政司缺少已提交的事实清单");
+  const input = { facts: j(facts) };
+  const text = await options.model({
+    decisionEpisodeId: `court:bureau:${day}`,
+    sessionKey: `${options.runId}:bureau`,
+    bureau: true,
+    systemPrompt: bureauPrompt,
+    prompt: JSON.stringify({
+      date: formatCourtTime(ctx.time, "zh-CN"),
+      facts: facts.map((f) => ({
+        id: f.id,
+        kind: f.category === "routine" ? "朝政杂事" : "浙江消息",
+        gist: f.claim,
+      })),
+    }),
+    input,
+  });
+  for (const report of parseBureau(text, facts))
+    sendDocument(ctx, {
+      id: nextDocumentId(ctx.state),
+      kind: "bureau",
+      fromId: "通政司",
+      toIds: [ids.ruler],
+      ...report,
+    });
+  ctx.commit("information.bureau_composed", { day });
 }
 
 export function createCourtModel(options: Options): DomainModel<CourtState> {
@@ -1399,18 +1618,72 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
         const p = event.payload;
         if (ctx.state.phase === "complete") break;
         switch (event.eventType) {
+          case "information.begin":
+            ctx.commit("information.enabled", {
+              decisionBudget: p.decisionBudget ?? imperialRules.decisionBudget,
+            });
+            for (const actorId of briefAuthors)
+              ctx.commit("actor.updated", {
+                actorId,
+                patch: {
+                  cadence: {
+                    slot: actorId === ids.lvFang ? 5 : CHEN,
+                    gapDays: actorId === ids.lvFang ? 1 : 2,
+                  },
+                },
+              });
+            dailyInformation(ctx);
+            break;
+          case "information.daily":
+            dailyInformation(ctx);
+            break;
+          case "information.compose":
+            await composeBureau(ctx, options, Number(p.day));
+            if (p.admit === true) {
+              ctx.commit("information.admission_ready", {});
+              handleAudienceAction(ctx, { type: "admit" });
+            } else openAudience(ctx);
+            break;
           case "court.begin":
             for (const actor of Object.values(ctx.state.actors))
               if (actor.llm && actor.active) wake(ctx, actor.id);
             break;
           case "court.audience_open":
-            openAudience(ctx);
+            if (
+              ctx.state.information &&
+              ctx.state.phase === "running" &&
+              ctx.time === ctx.state.nextAudienceAt &&
+              !secluded(ctx.state, ctx.time)
+            )
+              prepareBureau(ctx);
+            else openAudience(ctx);
             break;
           case "court.converse":
             await handleConverse(ctx, options, String(p.message));
             break;
+          case "court.open_message":
           case "court.reveal":
           case "court.admit":
+            if (
+              event.eventType === "court.admit" &&
+              ctx.state.information &&
+              !ctx.state.information.bureauDays.includes(
+                Math.floor(ctx.time / 12),
+              )
+            ) {
+              if (
+                !ctx.state.audience?.interruption ||
+                ctx.state.audience.interruption.admitted
+              )
+                throw new Error("There is no interruption to admit");
+              prepareBureau(ctx, false);
+              ctx.commit("information.admission_preparing", {});
+              ctx.later("information.compose", ctx.time, {
+                day: Math.floor(ctx.time / 12),
+                admit: true,
+              });
+              break;
+            }
             handleAudienceAction(
               ctx,
               p.action as unknown as Exclude<
@@ -1568,10 +1841,89 @@ export function reduceCourtState(
   const p = event.payload;
   const time = event.occurredAt;
   switch (event.eventType) {
+    case "information.admission_preparing":
+      return { ...state, phase: "running" };
+    case "information.admission_ready":
+      return { ...state, phase: "audience" };
+    case "information.enabled":
+      return {
+        ...state,
+        decisionBudget: Number(p.decisionBudget),
+        information: {
+          version: 1,
+          day: Math.floor(time / 12),
+          remaining: imperialRules.perDay,
+          facts: [],
+          bureauDays: [],
+        },
+      };
+    case "information.rumors":
+    case "information.bureau_prepared":
+      return {
+        ...state,
+        information: {
+          ...state.information!,
+          facts: [
+            ...state.information!.facts,
+            ...(p.facts as unknown as import("./types.ts").IntelligenceFact[]),
+          ],
+        },
+      };
+    case "information.bureau_composed":
+      return {
+        ...state,
+        information: {
+          ...state.information!,
+          bureauDays: [...state.information!.bureauDays, Number(p.day)],
+        },
+      };
+    case "information.spent": {
+      const remaining = imperialEnergy(state, time) - Number(p.cost);
+      if (
+        !Number.isInteger(Number(p.cost)) ||
+        Number(p.cost) < 0 ||
+        remaining < 0
+      )
+        throw new Error("皇帝精力不足");
+      return {
+        ...state,
+        information: {
+          ...state.information!,
+          day: Math.floor(time / 12),
+          remaining,
+        },
+      };
+    }
+    case "information.message_opened":
+      return patchDocument(state, String(p.documentId), { openedAt: time });
+    case "information.reading_closed":
+      return state;
+    case "court.audience_scheduled":
+      return { ...state, nextAudienceAt: simTime(Number(p.at)) };
+    case "court.audience_skipped": {
+      const next = { ...state };
+      delete (next as { nextAudienceAt?: SimTime }).nextAudienceAt;
+      return next;
+    }
     case "court.empty_skipped":
       return { ...state, nextAudienceAt: simTime(Number(p.nextAudienceAt)) };
     case "court.audience_opened": {
-      const audience = p.audience as unknown as CourtState["audience"] & {};
+      type SavedAudience = Omit<
+        NonNullable<CourtState["audience"]>,
+        "oralReportIds" | "conversation"
+      > &
+        Partial<
+          Pick<
+            NonNullable<CourtState["audience"]>,
+            "oralReportIds" | "conversation"
+          >
+        >;
+      const savedAudience = p.audience as unknown as SavedAudience;
+      const audience = {
+        ...savedAudience,
+        oralReportIds: savedAudience.oralReportIds ?? [],
+        conversation: savedAudience.conversation ?? [],
+      };
       let next: CourtState = { ...state, phase: "audience", audience };
       delete (next as { skipEmptyAudiences?: boolean }).skipEmptyAudiences;
       delete (next as { nextAudienceAt?: SimTime }).nextAudienceAt;

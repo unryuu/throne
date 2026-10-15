@@ -360,6 +360,7 @@ describe("terminal days in a whole court run", () => {
           : [],
     });
     const session = await startCourtSession({
+      information: false,
       runId: "11111111-2222-3333-4444-555555555555",
       language: "zh-CN",
       model,
@@ -418,4 +419,59 @@ describe("terminal days in a whole court run", () => {
     ).toBe(true);
     expect(state.decisions.every((d) => d.rejected.length === 0)).toBe(true);
   });
+});
+
+it("sends a brief without energy, keeps rumor references and enforces daily limits", () => {
+  const world: JsonObject = {
+    ...input,
+    documentKinds: ["brief", "letter"],
+    energy: { available: 0 },
+    briefAvailable: true,
+    rumors: [{ id: "rumor-1-0", text: "堤上有人" }],
+  };
+  const first = runShell(
+    world,
+    emptyShellState,
+    "send brief --subject 堤上风声 --text 请留意 --rumors rumor-1-0",
+  );
+  expect(first.isError).toBe(false);
+  expect(first.state.documents[0]!.rumorIds).toEqual(["rumor-1-0"]);
+  expect(
+    (
+      shellDecision({ ...first.state, inner: "据此报闻" })
+        .documents as JsonObject[]
+    )[0]!.rumorIds,
+  ).toEqual(["rumor-1-0"]);
+  expect(
+    runShell(world, first.state, "send brief --subject 重报 --text 无事")
+      .isError,
+  ).toBe(true);
+  expect(
+    runShell(
+      world,
+      emptyShellState,
+      `send brief --subject ${"长".repeat(21)} --text 无事`,
+    ).isError,
+  ).toBe(true);
+  expect(
+    runShell(
+      world,
+      emptyShellState,
+      `send brief --subject 小报 --text ${"长".repeat(151)}`,
+    ).isError,
+  ).toBe(true);
+  expect(
+    runShell(
+      world,
+      emptyShellState,
+      "send brief --subject 小报 --text 无事 --rumors missing",
+    ).isError,
+  ).toBe(true);
+  expect(
+    runShell(
+      { ...world, briefAvailable: false },
+      emptyShellState,
+      "send brief --subject 小报 --text 无事",
+    ).isError,
+  ).toBe(true);
 });

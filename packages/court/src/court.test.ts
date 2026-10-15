@@ -165,6 +165,7 @@ describe("court session", () => {
   it("opens with the scripted cabinet memorials and hides every private layer", async () => {
     const { model, calls } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -188,6 +189,7 @@ describe("court session", () => {
   it("plays a whole run with delays, isolation, consequences and exact replay", async () => {
     const { model, calls } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -276,6 +278,7 @@ describe("court session", () => {
       return base(request);
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -302,6 +305,7 @@ describe("court session", () => {
     const saved = await session.records();
     const callsAtSave = calls.length;
     const restored = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: async () => {
@@ -313,12 +317,14 @@ describe("court session", () => {
     expect(calls).toHaveLength(callsAtSave);
 
     const uninterrupted = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(defaultScripts).model,
     });
     await play(uninterrupted, followAll);
     const resumed = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(defaultScripts).model,
@@ -340,6 +346,7 @@ describe("court session", () => {
       return base(request);
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -384,6 +391,7 @@ describe("court session", () => {
             : { inner: "静观。" }) as Script,
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -422,6 +430,7 @@ describe("court session", () => {
   it("tells an author when a memorial is held, and arrest hands the province to Hu", async () => {
     const { model } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -470,6 +479,7 @@ describe("court session", () => {
   it("stops regular decisions at the cost guard but still gives an arrested minister his last word", async () => {
     const { model } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,
@@ -531,6 +541,7 @@ describe("court session", () => {
       },
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -604,6 +615,7 @@ describe("court session", () => {
           : { inner: "静观。" },
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -660,6 +672,7 @@ describe("court session", () => {
           }
         : { inner: "歇着。" };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel({ ...defaultScripts, [ids.zheng]: busy }).model,
@@ -750,6 +763,7 @@ describe("court session", () => {
           : { inner: "军务要紧。" },
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -863,6 +877,7 @@ describe("court session", () => {
       }),
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -983,6 +998,7 @@ describe("court session", () => {
       [ids.luBing]: () => ({ inner: "先放一放。" }),
     };
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: scriptedModel(scripts).model,
@@ -1015,6 +1031,7 @@ describe("court session", () => {
   it("rejects submissions that reference documents off the desk or decide the policy twice", async () => {
     const { model } = scriptedModel(defaultScripts);
     const session = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model,

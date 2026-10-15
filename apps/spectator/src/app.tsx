@@ -516,9 +516,12 @@ function Paper({ paper, from }: { paper: ChroniclePaper; from: string }) {
       <p className="paper-head">
         <span className="tag">{label("court.kind", paper.kind)}</span>
         {from}《{paper.subject}》
+        {paper.opened === true && <span className="tag">皇帝已展开</span>}
         {paper.direct && <span className="tag">陆炳面呈</span>}
       </p>
-      {folded ? (
+      {paper.opened === false ? (
+        <p className="meta">皇帝未展开</p>
+      ) : folded ? (
         <p className="summary">吕芳只口奏了摘要：{paper.summary}</p>
       ) : (
         <p className="body">{paper.text}</p>
@@ -600,6 +603,19 @@ function TruthItem({
 }) {
   const actor = (id: string) => chronicle.actors[id];
   switch (entry.type) {
+    case "intelligence":
+      return (
+        <div className="paper">
+          <p className="paper-head">
+            {entry.fact.channel === "rumor" ? "陆炳收到风闻" : "通政司事实"} ·{" "}
+            {entry.fact.id} · {entry.fact.true ? "属实" : "不实"}
+            {entry.fact.vague ? " · 模糊说法" : ""} ·{" "}
+            {entry.fact.category === "routine" ? "朝政杂事" : "浙江"}
+          </p>
+          <p>{entry.fact.claim}</p>
+          <p className="meta">生成时实情：{entry.fact.actual}</p>
+        </div>
+      );
     case "world":
       return <p className={`world-event ${entry.kind}`}>{entry.text}</p>;
     case "result":

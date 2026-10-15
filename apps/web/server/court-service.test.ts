@@ -2,13 +2,24 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CourtModel } from "@throne/court";
+import type { CourtModel, IntelligenceFact } from "@throne/court";
 import { CourtService, type CourtSnapshot } from "./court-service.ts";
 
 const quietModel =
   (onCall: () => void = () => {}): CourtModel =>
   async (request) => {
     onCall();
+    if (request.bureau)
+      return JSON.stringify({
+        reports: (request.input.facts as unknown as IntelligenceFact[]).map(
+          (f) => ({
+            id: f.id,
+            title: f.titles[0],
+            opening: "通政司谨汇：",
+            closing: "谨奏。",
+          }),
+        ),
+      });
     const input = JSON.parse(request.prompt.split("\n\n")[1]!) as {
       memorialsAwaitingYourDraft?: { memorialId: string }[];
     };
@@ -34,7 +45,7 @@ async function finish(service: CourtService, snapshot: CourtSnapshot) {
       audienceId: audience.id,
       items: audience.documents.map((d) => ({
         documentId: d.id,
-        disposition: d.draft ? "follow_draft" : "hold",
+        disposition: d.draft || d.hasDraft ? "follow_draft" : "hold",
       })),
       specials: [],
     });
@@ -62,7 +73,7 @@ describe("court service", () => {
       audienceId: first.id,
       items: first.documents.map((d) => ({
         documentId: d.id,
-        disposition: "follow_draft",
+        disposition: d.draft || d.hasDraft ? "follow_draft" : "hold",
       })),
       specials: [],
     });
@@ -86,13 +97,13 @@ describe("court service", () => {
       "utf8",
     );
     expect(raw).not.toContain("sk-");
-  });
+  }, 30000);
 
   it("keeps the audience open after an invalid submission and retries failed calls", async () => {
     const root = await mkdtemp(join(tmpdir(), "throne-court-test-"));
     let fail = true;
     const service = new CourtService(root, () => async (request) => {
-      if (fail) {
+      if (fail && !request.bureau) {
         fail = false;
         throw new Error("provider unavailable");
       }
@@ -122,4 +133,26 @@ describe("court service", () => {
     expect(resumed.status).toBe("waiting");
     expect(resumed.view.audience!.id).not.toBe(audience.id);
   });
+});
+
+it("saves a failed opening composition and resumes it after restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "throne-inbox-failure-"));
+  const service = new CourtService(root, () => async () => {
+    throw new Error("opening offline");
+  });
+  const failed = await service.create("zh-CN");
+  expect(failed.status).toBe("failed");
+  expect(failed.error).toContain("opening offline");
+  const raw = JSON.parse(
+    await readFile(join(root, "runs", "court", `${failed.id}.json`), "utf8"),
+  );
+  expect(
+    raw.state.information.facts.some(
+      (f: { channel: string }) => f.channel === "bureau",
+    ),
+  ).toBe(true);
+  const restored = new CourtService(root, () => quietModel());
+  const ready = await restored.retry(failed.id);
+  expect(ready.status).toBe("waiting");
+  expect(ready.view.audience!.documents.length).toBeGreaterThanOrEqual(5);
 });

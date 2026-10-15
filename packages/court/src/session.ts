@@ -7,6 +7,8 @@ import {
   type RescriptSubmission,
 } from "./model.ts";
 import { parseCourtDecision, type CourtModel } from "./npc.ts";
+import { parseBureau } from "./information.ts";
+import type { IntelligenceFact } from "./types.ts";
 import type { CourtState } from "./types.ts";
 import {
   audienceActionProblem,
@@ -35,6 +37,7 @@ const playerEvents = [
   "court.rescript",
   "court.converse",
   "court.reveal",
+  "court.open_message",
   "court.admit",
 ];
 
@@ -44,6 +47,8 @@ export async function startCourtSession(options: {
   model: CourtModel;
   records?: readonly SimulationRecord[];
   decisionBudget?: number;
+  information?: boolean;
+  onInitialFailure?: (error: unknown) => void;
   /** Give regular decisions the whole experience log (terminal mode). */
   fullLog?: boolean;
 }): Promise<CourtSession> {
@@ -55,8 +60,15 @@ export async function startCourtSession(options: {
     for (let attempt = 1; ; attempt += 1) {
       const text = await options.model(request);
       try {
-        const decision = parseCourtDecision(text);
-        request.check?.(decision);
+        if (request.bureau)
+          parseBureau(
+            text,
+            request.input.facts as unknown as readonly IntelligenceFact[],
+          );
+        else {
+          const decision = parseCourtDecision(text);
+          request.check?.(decision);
+        }
       } catch (error) {
         if (attempt < 2) continue;
         throw error;
@@ -84,6 +96,16 @@ export async function startCourtSession(options: {
     );
   } else {
     kernel = new SimulationKernel(initial, domain, store, options.runId);
+    if (options.information !== false)
+      await kernel.schedule({
+        eventType: "information.begin",
+        scheduledAt: initial.nextAudienceAt!,
+        payload: {
+          ...(options.decisionBudget !== undefined
+            ? { decisionBudget: options.decisionBudget }
+            : {}),
+        },
+      });
     for (const [eventType, scheduledAt] of [
       ["court.begin", initial.nextAudienceAt!],
       ["court.audience_open", initial.nextAudienceAt!],
@@ -121,7 +143,14 @@ export async function startCourtSession(options: {
       busy = false;
     }
   };
-  if (!options.records) await advance();
+  if (!options.records) {
+    try {
+      await advance();
+    } catch (error) {
+      if (!options.onInitialFailure) throw error;
+      options.onInitialFailure(error);
+    }
+  }
   return {
     get view() {
       return courtRulerView(kernel.state, kernel.time);

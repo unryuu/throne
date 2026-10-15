@@ -7,6 +7,7 @@ import type { JsonObject, JsonValue } from "@throne/shared-types";
  */
 
 export type ShellDocument = {
+  readonly rumorIds?: readonly string[];
   readonly kind: string;
   readonly to?: readonly string[];
   readonly subject: string;
@@ -27,6 +28,7 @@ export type ShellState = {
   readonly dispositions?: readonly JsonObject[];
   readonly routes?: readonly JsonObject[];
   readonly report?: string;
+  readonly reportSubject?: string;
   readonly interrupt?: string;
   /** Scratch files the actor wrote under /tmp today. */
   readonly tmp?: Readonly<Record<string, string>>;
@@ -51,6 +53,7 @@ const deskFiles: Readonly<Record<string, string>> = {
   standingOrders: "口谕",
   emperor: "皇上",
   reportsAwaitingRouting: "待转呈原报",
+  rumors: "风闻",
 };
 
 type Option = { kind: string; description: string };
@@ -198,7 +201,7 @@ export function shellHelp(input: JsonObject = {}): string {
       "处置本章（本职，不花精力；没处置的仍留在你手里）：",
       "  dispose doc-12 present          呈览；办法见 abilities.txt",
       "  dispose doc-12 summarize --text 口奏摘要",
-      "  report --text 口奏给皇上的话（皇上下次理事时听到）",
+      "  report --subject 标题 --text 口奏给皇上的话（皇上下次理事时听到）",
       "  interrupt --reason 为何要请皇上出关（只在皇上闭关时有用，皇上可能不见）",
       "  本章见 desk/待处置.txt、desk/留中.txt；内阁积压只知来人和题目。",
     );
@@ -224,7 +227,9 @@ export function shellHelp(input: JsonObject = {}): string {
     "",
     "查阅：ls cat head tail grep wc sed -n find sort echo，可用管道、&&、for 循环、$(...)。草稿可以写在 /tmp/ 下，其余文件只读。",
     "",
-    "发文书（今日最多三份，每份不超过200字）：",
+    "发文书（普通文书今日最多三份，每份不超过200字；brief 另算）：",
+    ...(input.briefInstruction ? [String(input.briefInstruction)] : []),
+    ...(input.rumorInstruction ? [String(input.rumorInstruction)] : []),
     "  send memorial --subject 题目 --text 正文",
     "  send letter --to actor:yang-jinshui,actor:hu-zongxian --subject 题目 <<'EOF'",
     "  正文",
@@ -904,7 +909,9 @@ function longOptions(argv: string[]): {
 function energyLeft(ctx: Ctx): number | undefined {
   const available = (ctx.input.energy as JsonObject | undefined)?.available;
   return typeof available === "number"
-    ? available - ctx.state.documents.length - ctx.state.actions.length
+    ? available -
+        ctx.state.documents.filter((d) => d.kind !== "brief").length -
+        ctx.state.actions.length
     : undefined;
 }
 
@@ -923,14 +930,24 @@ function send(ctx: Ctx, argv: string[], io: Io): Out {
     );
   if (!kinds.includes(kind))
     throw new Error(`你没有 ${kind} 这种文书渠道，可用：${kinds.join("、")}`);
-  spend(ctx);
-  if (ctx.state.documents.length >= shellLimits.documents)
+  if (kind !== "brief") spend(ctx);
+  if (
+    kind === "brief" &&
+    (ctx.input.briefAvailable === false ||
+      ctx.state.documents.some((d) => d.kind === "brief"))
+  )
+    throw new Error("今日已写过条子");
+  if (
+    kind !== "brief" &&
+    ctx.state.documents.filter((d) => d.kind !== "brief").length >=
+      shellLimits.documents
+  )
     throw new Error(
       `今天已排了 ${shellLimits.documents} 份文书，不能再发；可先 cancel 撤回`,
     );
   const { positional, opts } = longOptions(argv.slice(1));
   for (const key of opts.keys())
-    if (!["to", "subject", "text"].includes(key))
+    if (!["to", "subject", "text", "rumors"].includes(key))
       throw new Error(`没有 --${key} 这个选项`);
   const to = (opts.get("to") ?? [])
     .flatMap((t) => t.split(/[,，、]/))
@@ -944,6 +961,15 @@ function send(ctx: Ctx, argv: string[], io: Io): Out {
   ).trim();
   if (!subject) throw new Error("缺少 --subject");
   if (!text) throw new Error("缺少正文：用 --text 或 heredoc");
+  if (kind === "brief" && (subject.length > 20 || text.length > 150))
+    throw new Error("条子标题≤20字、正文≤150字");
+  const rumorIds = opts.get("rumors")?.flatMap((x) => x.split(/[,，、]/));
+  if (
+    rumorIds?.some(
+      (id) => !arr<JsonObject>(ctx.input.rumors).some((r) => r.id === id),
+    )
+  )
+    throw new Error("案头无此风闻编号");
   if (subject.length > 80) throw new Error("题目太长");
   if (text.length > 2000) throw new Error("正文太长");
   let recipients: string[] | undefined;
@@ -959,6 +985,7 @@ function send(ctx: Ctx, argv: string[], io: Io): Out {
   const doc: ShellDocument = {
     kind,
     ...(recipients ? { to: recipients } : {}),
+    ...(rumorIds ? { rumorIds } : {}),
     subject,
     text,
   };
@@ -1053,7 +1080,9 @@ function pending(ctx: Ctx): Out {
     code: 0,
     out: [
       ...(left !== undefined ? [`精力剩 ${left} 点`] : []),
-      `文书 ${d.length}/${shellLimits.documents}`,
+      ctx.input.briefInstruction
+        ? `普通文书 ${ctx.state.documents.filter((doc) => doc.kind !== "brief").length}/${shellLimits.documents}；免费条子 ${ctx.input.briefAvailable === false ? 1 : ctx.state.documents.filter((doc) => doc.kind === "brief").length}/1`
+        : `文书 ${d.length}/${shellLimits.documents}`,
       ...d,
       `办事 ${a.length}/${shellLimits.actions}`,
       ...a,
@@ -1437,7 +1466,27 @@ function exec(ctx: Ctx, command: Command, io: Io): Out {
     case "report":
       if (ctx.input.dispositionOptions === undefined)
         throw new Error("你没有口奏的门路");
-      ctx.state = { ...ctx.state, report: said(args, local, "text", 1500) };
+      {
+        const { opts, positional } = longOptions(args);
+        const subject = opts.get("subject")?.join(" ");
+        if (subject && subject.length > 20) throw new Error("口奏标题≤20字");
+        if (ctx.input.briefInstruction && !subject?.trim())
+          throw new Error("口奏须有 --subject 标题，皇帝先看标题才决定听不听");
+        for (const key of opts.keys())
+          if (!["subject", "text"].includes(key))
+            throw new Error(`没有 --${key} 这个选项`);
+        const report = (
+          opts.get("text")?.join("\n") ??
+          (positional.join(" ") || local.stdin || "")
+        ).trim();
+        if (!report || report.length > 1500)
+          throw new Error("口奏须为1–1500字");
+        ctx.state = {
+          ...ctx.state,
+          report,
+          ...(subject ? { reportSubject: subject } : {}),
+        };
+      }
       return { code: 0, out: "口奏已备好，皇上下次理事时听到。" };
     case "interrupt":
       if (ctx.input.dispositionOptions === undefined)
@@ -1606,6 +1655,7 @@ export function shellDecision(state: ShellState): JsonObject {
     documents: state.documents.map((d) => ({
       kind: d.kind,
       ...(d.to ? { to: [...d.to] } : {}),
+      ...(d.rumorIds ? { rumorIds: [...d.rumorIds] } : {}),
       subject: d.subject,
       text: d.text,
     })),
@@ -1617,7 +1667,14 @@ export function shellDecision(state: ShellState): JsonObject {
     drafts: [...(state.drafts ?? [])],
     dispositions: [...(state.dispositions ?? [])],
     routes: [...(state.routes ?? [])],
-    ...(state.report ? { report: state.report } : {}),
+    ...(state.report
+      ? {
+          report: state.report,
+          ...(state.reportSubject
+            ? { reportSubject: state.reportSubject }
+            : {}),
+        }
+      : {}),
     ...(state.interrupt ? { interrupt: { reason: state.interrupt } } : {}),
   };
 }
@@ -1632,8 +1689,14 @@ export function shellSystemPrompt(input: JsonObject): string {
     "你面前是一台终端（bash 工具）。文件是你此刻所知的一切，命令就是你今天能做的事：查阅用 ls、cat、grep 等，发文书用 send，办事用 act。",
     "今天你看到的是今早的情形。发出的文书和办的事要等你收笔后世界才给出结果，不要声称事情已经办成。可以什么都不做。",
     "文书用半文半白的明代公文口吻，每份不超过200字。",
+    ...(input.briefInstruction ? [String(input.briefInstruction)] : []),
+    ...(input.rumorInstruction ? [String(input.rumorInstruction)] : []),
     ...(input.dispositionOptions !== undefined
-      ? ["口奏可以报喜不报忧，但皇上另有耳目。"]
+      ? [
+          input.briefInstruction
+            ? "口奏可以报喜不报忧，但皇上另有耳目。report 必须自己写 --subject 标题（≤20字）；皇帝先看标题，花精力展开后才听正文。"
+            : "口奏可以报喜不报忧，但皇上另有耳目。",
+        ]
       : []),
     "办完了用 end 收笔，写下你此刻真实的想法：第一人称，不超过150字，只有你自己知道。收笔后今天就过去了。",
     "用中文书写。",

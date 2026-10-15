@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Locale, MessageKey, Translator } from "@throne/localization";
 import {
   formatCourtTime,
+  imperialRules,
   ids,
   type AudienceAction,
   type CourtAction,
@@ -74,7 +75,7 @@ function defaultParams(kind: EdictKind, view: CourtRulerView): JsonObject {
 
 function initialChoice(d: RulerDocumentView): Choice {
   return {
-    disposition: d.draft ? "follow_draft" : "hold",
+    disposition: d.draft || d.hasDraft ? "follow_draft" : "hold",
     edict: d.draft
       ? { kind: d.draft.edict.kind, params: d.draft.edict.params }
       : { kind: "acknowledge", params: {} },
@@ -313,6 +314,14 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           ) : snapshot.status === "waiting" && view.audience ? (
             <section className="court-desk" aria-label={t("court.desk")}>
               <h3>{t("court.desk")}</h3>
+              {view.energy !== undefined ? (
+                <p role="status">
+                  {t("court.energy", {
+                    count: view.energy,
+                    capacity: imperialRules.perDay,
+                  })}
+                </p>
+              ) : null}
               {view.audience.oralReports.map((text, index) => (
                 <div className="court-oral" key={index}>
                   <span>{t("court.oral")}</span>
@@ -330,6 +339,9 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                   choice={choices[doc.id]}
                   onChange={(next) =>
                     setChoices({ ...choices, [doc.id]: next })
+                  }
+                  onOpen={() =>
+                    void act({ type: "open_message", documentId: doc.id })
                   }
                   onReveal={() =>
                     void act({ type: "reveal", documentId: doc.id })
@@ -367,7 +379,12 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                     </p>
                     <button
                       className="court-link"
-                      disabled={pending || !talk.trim()}
+                      disabled={
+                        pending ||
+                        !talk.trim() ||
+                        (view.energy === 0 &&
+                          !view.audience.conversation.length)
+                      }
                       onClick={() =>
                         void act({ type: "converse", message: talk.trim() })
                       }
@@ -550,7 +567,16 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           {review ? (
             <CourtReviewView review={review} locale={locale} t={t} />
           ) : null}
-          <Archive view={view} locale={locale} t={t} />
+          <Archive
+            view={view}
+            locale={locale}
+            t={t}
+            onOpen={(documentId) =>
+              void act({ type: "open_message", documentId })
+            }
+            onReveal={(documentId) => void act({ type: "reveal", documentId })}
+            pending={pending}
+          />
         </>
       ) : null}
     </div>
@@ -563,6 +589,7 @@ function DeskDocument({
   choice,
   onChange,
   onReveal,
+  onOpen,
   pending,
   locale,
   t,
@@ -572,13 +599,14 @@ function DeskDocument({
   choice: Choice | undefined;
   onChange: (next: Choice) => void;
   onReveal: () => void;
+  onOpen: () => void;
   pending: boolean;
   locale: Locale;
   t: Translator;
 }) {
   if (!choice) return null;
   const dispositions = [
-    ...(doc.draft ? (["follow_draft"] as const) : []),
+    ...(doc.draft || doc.hasDraft ? (["follow_draft"] as const) : []),
     "custom" as const,
     "hold" as const,
   ];
@@ -596,12 +624,25 @@ function DeskDocument({
     <article className={`court-doc court-doc-${doc.kind}`}>
       <DocumentHead doc={doc} locale={locale} t={t} />
       <DocumentBody doc={doc} t={t} />
-      {doc.folded ? (
-        <button className="court-link" disabled={pending} onClick={onReveal}>
+      {doc.opened === false ? (
+        <button
+          className="court-link"
+          disabled={pending || view.energy === 0}
+          onClick={onOpen}
+        >
+          {t("court.openMessage")}
+        </button>
+      ) : null}
+      {doc.folded && doc.opened !== false ? (
+        <button
+          className="court-link"
+          disabled={pending || view.energy === 0}
+          onClick={onReveal}
+        >
           {t("court.revealOriginal")}
         </button>
       ) : null}
-      {doc.draft ? (
+      {doc.draft && doc.opened !== false ? (
         <div className="court-draft">
           <span>{t("court.draft")}</span>
           <strong>
@@ -610,7 +651,7 @@ function DeskDocument({
           <EdictParams edict={doc.draft.edict} view={view} t={t} />
           <p>{doc.draft.text}</p>
         </div>
-      ) : doc.kind === "memorial" ? (
+      ) : doc.kind === "memorial" && !doc.hasDraft ? (
         <p className="fog-note">{t("court.noDraft")}</p>
       ) : null}
       <div className="view-switch court-dispositions">
@@ -646,7 +687,8 @@ function DeskDocument({
           t={t}
         />
       ) : null}
-      {choice.disposition !== "hold" ? (
+      {choice.disposition === "custom" ||
+      (view.energy === undefined && choice.disposition === "follow_draft") ? (
         <label className="court-vermilion">
           <span>{t("court.vermilion")}</span>
           <textarea
@@ -683,6 +725,8 @@ function DocumentHead({
 }
 
 function DocumentBody({ doc, t }: { doc: RulerDocumentView; t: Translator }) {
+  if (doc.opened === false)
+    return <p className="fog-note">{t("court.unopened")}</p>;
   return (
     <>
       {doc.summary ? (
@@ -838,10 +882,16 @@ function Archive({
   view,
   locale,
   t,
+  onOpen,
+  onReveal,
+  pending,
 }: {
   view: CourtRulerView;
   locale: Locale;
   t: Translator;
+  onOpen: (id: string) => void;
+  onReveal: (id: string) => void;
+  pending: boolean;
 }) {
   if (!view.archive.length && !view.edicts.length) return null;
   return (
@@ -855,6 +905,22 @@ function Archive({
             <li className="document court-doc" key={doc.id}>
               <DocumentHead doc={doc} locale={locale} t={t} />
               <DocumentBody doc={doc} t={t} />
+              {view.audience && doc.opened === false ? (
+                <button
+                  disabled={pending || view.energy === 0}
+                  onClick={() => onOpen(doc.id)}
+                >
+                  {t("court.openMessage")}
+                </button>
+              ) : null}
+              {view.audience && doc.opened === true && doc.folded ? (
+                <button
+                  disabled={pending || view.energy === 0}
+                  onClick={() => onReveal(doc.id)}
+                >
+                  {t("court.revealOriginal")}
+                </button>
+              ) : null}
               {doc.rescript ? (
                 <p className="court-rescript">
                   {t(

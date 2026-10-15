@@ -22,6 +22,7 @@ const close = (s: CourtSession, skipEmptyAudiences = false) =>
   });
 const restore = async (s: CourtSession, model = idle) =>
   startCourtSession({
+    information: false,
     runId,
     language: "zh-CN",
     model,
@@ -31,6 +32,7 @@ const restore = async (s: CourtSession, model = idle) =>
 describe("imperial initiative", () => {
   it("wakes all six at day zero, lets Zhejiang act on day one without letters and replays exactly", async () => {
     const s = await startCourtSession({
+      information: false,
       runId,
       language: "zh-CN",
       model: idle,
@@ -96,7 +98,12 @@ describe("imperial initiative", () => {
           : {}),
       });
     };
-    const s = await startCourtSession({ runId, language: "zh-CN", model });
+    const s = await startCourtSession({
+      information: false,
+      runId,
+      language: "zh-CN",
+      model,
+    });
     const targets = s.view.options.questionable.map((a) => a.id);
     await s.submit({
       audienceId: s.view.audience!.id,
@@ -197,7 +204,12 @@ describe("imperial initiative", () => {
             }
           : {}),
       });
-    const s = await startCourtSession({ runId, language: "zh-CN", model });
+    const s = await startCourtSession({
+      information: false,
+      runId,
+      language: "zh-CN",
+      model,
+    });
     // Ask Hu while disposing of Yan's memorial: the question must only go to Hu.
     await s.submit({
       audienceId: s.view.audience!.id,
@@ -268,7 +280,12 @@ describe("imperial initiative", () => {
       }
       return JSON.stringify({ inner: "静候。" });
     };
-    const s = await startCourtSession({ runId, language: "zh-CN", model });
+    const s = await startCourtSession({
+      information: false,
+      runId,
+      language: "zh-CN",
+      model,
+    });
     await close(s); // Day one opening decisions finish without replies.
     await expect(
       s.submit({
@@ -319,6 +336,7 @@ describe("imperial initiative", () => {
     ) as { id: string; records: SimulationRecord[] };
     let calls = 0;
     const s = await startCourtSession({
+      information: false,
       runId: legacy.id,
       language: "zh-CN",
       records: legacy.records,

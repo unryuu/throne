@@ -1,3 +1,8 @@
+import {
+  briefAuthors,
+  briefInstruction,
+  rumorInstruction,
+} from "./information.ts";
 import { z } from "zod";
 import type { JsonObject } from "@throne/shared-types";
 import { formatCourtTime } from "./calendar.ts";
@@ -22,6 +27,7 @@ export type CourtModelRequest = {
   readonly input: JsonObject;
   /** Lü Fang answering the emperor face to face; it needs a prompt reply, not a day. */
   readonly converse?: boolean;
+  readonly bureau?: boolean;
   /** Throws when a well-formed reply still fails this decision's obligations. */
   readonly check?: (decision: CourtDecision) => void;
 };
@@ -39,6 +45,7 @@ export const courtDecisionSchema = z.object({
     .array(
       z.object({
         kind: z.string(),
+        rumorIds: z.array(z.string()).optional(),
         to: z.union([z.string(), z.array(z.string())]).optional(),
         subject: z.string().max(80).optional(),
         text: z.string().min(1).max(2000),
@@ -65,6 +72,7 @@ export const courtDecisionSchema = z.object({
     .default([]),
   // Models fill every field of the reply template, so optional extras may come back null or empty.
   report: z.string().max(1500).nullish(),
+  reportSubject: z.string().max(20).nullish(),
   reply: z.string().max(1500).nullish(),
   dispositions: z
     .array(
@@ -313,6 +321,7 @@ function experienceLog(
             to: doc.toIds.map(name),
             subject: doc.subject,
             text: doc.text,
+            ...(doc.rumorIds ? { rumorIds: doc.rumorIds } : {}),
           };
         }),
         actions: d.actionIds.map((id) => {
@@ -383,6 +392,17 @@ export function buildNpcInput(
   };
   return {
     actorId,
+    ...(state.information && briefAuthors.includes(actorId)
+      ? {
+          briefInstruction,
+          briefAvailable: !Object.values(state.documents).some(
+            (d) =>
+              d.kind === "brief" &&
+              d.fromId === actorId &&
+              Math.floor(d.sentAt / 12) === Math.floor(time / 12),
+          ),
+        }
+      : {}),
     self: {
       name: actor.name,
       office: actor.office,
@@ -509,6 +529,14 @@ export function buildNpcInput(
     ...(actorId === ids.luBing
       ? {
           emperor: secludedNote(state, language),
+          ...(state.information
+            ? {
+                rumors: state.information.facts
+                  .filter((f) => f.channel === "rumor")
+                  .map((f) => ({ id: f.id, day: f.day, text: f.claim })),
+                rumorInstruction,
+              }
+            : {}),
           reportsAwaitingRouting: reportsAwaitingRoute(state).map((d) => ({
             reportId: d.id,
             subject: d.subject,
@@ -554,6 +582,13 @@ export function systemPrompt(
     "- actions：你实际要去做的事，只能从 capabilities 中选，parameters 须符合说明。可以什么都不做。",
     "写信、上奏、办事都花精力，见 energy；超出的会被退回。一次最多发三份文书、办三件事。文书用半文半白的明代公文口吻，每份不超过200字。行动的结果要等世界给出，不要声称事情已经办成。",
   ];
+  if (state.information && briefAuthors.includes(actorId))
+    lines.push(briefInstruction);
+  if (state.information && actorId === ids.luBing) lines.push(rumorInstruction);
+  if (state.information)
+    lines.push(
+      "report 如有口奏，另给 reportSubject（≤20字），皇帝先看标题，展开后才听正文。",
+    );
   if (actorId === ids.yanSong)
     lines.push(
       "- drafts：对 memorialsAwaitingYourDraft 中的每份奏疏票拟：memorialId、edict（kind 取自 edictOptions，params 按说明）、text（替皇上拟的批语）。不票拟的奏疏会压在内阁，皇上看不到。",

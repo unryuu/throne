@@ -26,6 +26,6 @@ Local spectating and storyteller (2026-10-15): the spectator dev server lists lo
 
 Imperial questions and opening (2026-10-15): the emperor can ask any live minister a question that travels like other papers and opens memorial/secret-memorial replies; all ministers act from day 0; the web desk can skip to the next day with something on it. Rules: [ADR 0009](docs/architecture/0009-imperial-questions.md). A 10-day playtest showed the ask-and-answer loop works but takes about two weeks for Hu Zongxian (Taizhou is 7 days away).
 
-Under discussion: a richer imperial information flow (regular briefs from Yan Song and Lü Fang, engine-generated reports with leaked clues, Lu Bing's daily rumours, an attention budget for the emperor). DeepSeek is cheap; cost should not drive these designs.
+Imperial inbox (2026-10-15): each day the emperor gets 5–10 titled messages (notes straight from Yan Song, Lü Fang and Lu Bing; 通政司 reports built from engine facts, some leaked truth, some routine, a few false; plus memorials). Titles are free; opening one, talking to Lü Fang or a personal edict costs 1 of 3 daily energy; following a draft unread is free. Lu Bing gets 1–3 rumours a day without knowing which are true. Rules: [ADR 0010](docs/architecture/0010-imperial-inbox.md); 20-day playtest: [FEAT-0011](docs/issues/archive/court-inbox-2026-10-15.md). The 通政司 clerk now writes freely around each fact (no raw engine numbers). Open: the desk shows each message as a full card rather than a compact title list.
 
 Next: see [HANDOFF.md](HANDOFF.md).

@@ -496,6 +496,13 @@ export const en = {
   "court.desk": "On your desk",
   "court.emptyDesk":
     "No memorials today. You may issue an edict, speak with Lü Fang, or simply retire.",
+  "court.kind.brief": "Private brief",
+  "court.kind.bureau": "Transmission Office report",
+  "court.kind.oral": "Oral report",
+  "court.energy":
+    "Attention remaining: {count} / {capacity}. Opening a message, a conversation or a personal edict costs 1; following a draft or holding costs nothing.",
+  "court.openMessage": "Read message (1 attention)",
+  "court.unopened": "Unread — title only",
   "court.kind.memorial": "Memorial",
   "court.kind.secret_memorial": "Secret memorial (via the Directorate)",
   "court.kind.report": "Embroidered Guard report",
@@ -1067,6 +1074,13 @@ export const zhCN: Record<MessageKey, string> = {
     "已达成本护栏：有 {count} 次大臣决策未调用模型。此后人物沉默不是他们自己的选择。",
   "court.desk": "今日御案",
   "court.emptyDesk": "今日御案无本章。可以发特旨、召吕芳说话，也可以直接退朝。",
+  "court.kind.brief": "御前条子",
+  "court.kind.bureau": "通政司汇报",
+  "court.kind.oral": "口奏",
+  "court.energy":
+    "今日剩余精力 {count} / {capacity}。展开、一次谈话、一道特旨或改批各花 1 点；依拟、留中不花。",
+  "court.openMessage": "展开消息（1 点精力）",
+  "court.unopened": "未展开 · 仅看标题",
   "court.kind.memorial": "奏疏",
   "court.kind.secret_memorial": "密奏（经司礼监）",
   "court.kind.report": "锦衣卫回奏",

@@ -82,18 +82,23 @@ export class CourtService {
       );
     const id = randomUUID();
     const calls: LiveCallTrace[] = [];
+    let initialError: string | undefined;
     const session = await startCourtSession({
       runId: id,
       language: locale,
       model: this.modelFactory((trace) => calls.push(trace)),
       fullLog: this.fullLog,
+      onInitialFailure: (error) => {
+        initialError = error instanceof Error ? error.message : String(error);
+      },
     });
     const entry: Entry = {
       id,
       locale,
       session,
       calls,
-      status: "waiting",
+      status: session.failed ? "failed" : "waiting",
+      ...(initialError ? { error: initialError } : {}),
       submitted: new Set(),
     };
     this.entries.set(id, entry);

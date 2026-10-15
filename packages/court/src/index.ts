@@ -8,3 +8,4 @@ export * from "./shell.ts";
 export * from "./types.ts";
 export * from "./views.ts";
 export * from "./chronicle.ts";
+export * from "./information.ts";

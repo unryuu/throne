@@ -65,3 +65,70 @@ describe("local spectator rendering", () => {
     expect(html).toContain("转述 2 条");
   });
 });
+
+it("shows which messages the emperor opened and keeps truth labels in the truth view", () => {
+  const data: Chronicle = {
+    ...chronicle,
+    days: [
+      {
+        ...chronicle.days[0]!,
+        day: 0,
+        ruler: [
+          {
+            type: "audience",
+            at: 6,
+            oral: [],
+            papers: [
+              {
+                id: "read",
+                kind: "brief",
+                from: "actor:lu-bing",
+                subject: "堤上风声",
+                text: "皇帝读过的说法",
+                direct: false,
+                revealed: false,
+                opened: true,
+              },
+              {
+                id: "unread",
+                kind: "bureau",
+                from: "通政司",
+                subject: "民情例报",
+                text: "不应在御览显示的正文",
+                direct: false,
+                revealed: false,
+                opened: false,
+              },
+            ],
+          },
+        ],
+        truth: [
+          {
+            type: "intelligence",
+            at: 0,
+            fact: {
+              id: "rumor-0-0",
+              day: 0,
+              channel: "rumor",
+              category: "false_rumor",
+              true: false,
+              vague: false,
+              actual: "实无民变",
+              claim: "建德民变",
+              titles: ["建德风声"],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const ruler = render("/0/ruler", { data });
+  expect(ruler).toContain("皇帝已展开");
+  expect(ruler).toContain("皇帝未展开");
+  expect(ruler).toContain("皇帝读过的说法");
+  expect(ruler).not.toContain("不应在御览显示的正文");
+  expect(ruler).not.toContain("实无民变");
+  const truth = render("/0/truth", { data });
+  expect(truth).toContain("不实");
+  expect(truth).toContain("实无民变");
+});

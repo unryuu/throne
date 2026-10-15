@@ -50,7 +50,12 @@ const model: CourtModel = async (request) => {
 };
 
 async function playedRun(): Promise<ChronicleSource> {
-  const session = await startCourtSession({ runId, language: "zh-CN", model });
+  const session = await startCourtSession({
+    information: false,
+    runId,
+    language: "zh-CN",
+    model,
+  });
   for (let i = 0; !session.complete && i < 200; i += 1) {
     const audience = session.view.audience!;
     await session.submit({

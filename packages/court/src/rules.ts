@@ -1,3 +1,4 @@
+import { briefAuthors } from "./information.ts";
 import type { JsonObject, JsonValue } from "@throne/shared-types";
 import { countyIds, ids } from "./jiajing.ts";
 import type {
@@ -220,7 +221,13 @@ export function energyAvailable(
     if (d.actorId !== actorId) continue;
     rest(d.at);
     if (!d.final)
-      energy = Math.max(0, energy - d.documentIds.length - d.actionIds.length);
+      energy = Math.max(
+        0,
+        energy -
+          d.documentIds.filter((id) => state.documents[id]?.kind !== "brief")
+            .length -
+          d.actionIds.length,
+      );
   }
   rest(time);
   return energy;
@@ -319,13 +326,11 @@ export function availableDocumentKinds(
       d.edict.params.actorId === actorId &&
       d.deliveredTo.includes(actorId),
   );
+  const kinds =
+    state.information && briefAuthors.includes(actorId)
+      ? [...actor.documentKinds, "brief" as const]
+      : actor.documentKinds;
   return asked
-    ? [
-        ...new Set<DocumentKind>([
-          ...actor.documentKinds,
-          "memorial",
-          "secret_memorial",
-        ]),
-      ]
-    : actor.documentKinds;
+    ? [...new Set<DocumentKind>([...kinds, "memorial", "secret_memorial"])]
+    : kinds;
 }

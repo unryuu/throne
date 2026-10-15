@@ -61,7 +61,14 @@ export type Edict = {
 };
 
 export type DocumentKind =
-  "memorial" | "secret_memorial" | "letter" | "edict" | "report";
+  | "memorial"
+  | "secret_memorial"
+  | "letter"
+  | "edict"
+  | "report"
+  | "brief"
+  | "bureau"
+  | "oral";
 
 export type Draft = {
   readonly edict: Edict;
@@ -101,6 +108,9 @@ export type CourtDocument = {
   readonly replyToId?: string;
   readonly decisionEpisodeId?: string;
   readonly scripted?: boolean;
+  readonly openedAt?: SimTime;
+  readonly rumorIds?: readonly string[];
+  readonly factId?: string;
   /** Passage through the Directorate of Ceremonial (Lü Fang). */
   readonly directorate?: {
     readonly receivedAt: SimTime;
@@ -199,6 +209,7 @@ export type OralReport = {
 };
 
 export type CourtState = {
+  readonly information?: ImperialInformation;
   readonly phase: "running" | "audience" | "complete";
   readonly seed: string;
   readonly audience?: Audience;
@@ -240,4 +251,25 @@ export type CourtState = {
   /** Cost guard on regular decisions; final decisions after dismissal are exempt. */
   readonly decisionBudget: number;
   readonly summary?: JsonObject;
+};
+
+export type IntelligenceFact = {
+  readonly id: string;
+  readonly day: number;
+  readonly channel: "bureau" | "rumor";
+  readonly category: "leak" | "routine" | "false_rumor";
+  readonly true: boolean;
+  readonly vague: boolean;
+  readonly countyId?: CountyId;
+  readonly actual: string;
+  readonly claim: string;
+  readonly titles: readonly string[];
+};
+
+export type ImperialInformation = {
+  readonly version: 1;
+  readonly day: number;
+  readonly remaining: number;
+  readonly facts: readonly IntelligenceFact[];
+  readonly bureauDays: readonly number[];
 };

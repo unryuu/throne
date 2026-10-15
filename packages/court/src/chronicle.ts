@@ -12,6 +12,7 @@ import type {
   CourtDocument,
   CourtState,
   DocumentKind,
+  IntelligenceFact,
 } from "./types.ts";
 
 /**
@@ -84,6 +85,7 @@ export type ChroniclePaper = {
   /** Lü Fang's summary when he folded the original away. */
   readonly summary?: string;
   readonly revealed: boolean;
+  readonly opened?: boolean;
   readonly draft?: string;
   readonly direct: boolean;
   readonly luBingNote?: string;
@@ -102,6 +104,11 @@ export type ChronicleWritten = {
 };
 
 export type TruthEntry =
+  | {
+      readonly type: "intelligence";
+      readonly at: number;
+      readonly fact: IntelligenceFact;
+    }
   | {
       readonly type: "decision";
       readonly at: number;
@@ -216,6 +223,12 @@ const quietEvents = new Set([
   "document.revealed",
   "court.oral_report",
   "court.desk_added",
+  "information.enabled",
+  "information.admission_preparing",
+  "information.admission_ready",
+  "information.spent",
+  "information.reading_closed",
+  "information.bureau_composed",
   "npc.woken",
   "npc.wake_capped",
   "npc.decision_skipped",
@@ -336,23 +349,30 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
   let lastDay = 0;
   let openAudience: Extract<RulerEntry, { type: "audience" }> | undefined;
 
-  const paper = (id: string): ChroniclePaper => {
+  const paper = (id: string, at: number): ChroniclePaper => {
     const doc: CourtDocument | undefined = docs[id];
     if (!doc) throw new Error(`Chronicle: audience paper ${id} is missing`);
     const folded = doc.directorate?.action === "summarize";
+    const revealed =
+      doc.revealedAt !== undefined && dayOf(doc.revealedAt) <= dayOf(at);
+    const opened =
+      !state.information ||
+      (doc.openedAt !== undefined && dayOf(doc.openedAt) <= dayOf(at));
     return {
       id,
       kind: doc.kind,
       from: doc.fromId,
       subject: doc.subject,
-      text: doc.text,
-      ...(folded && doc.directorate?.text
+      text:
+        opened && (!state.information || !folded || revealed) ? doc.text : "",
+      ...(state.information ? { opened } : {}),
+      ...(opened && folded && doc.directorate?.text
         ? { summary: doc.directorate.text }
         : {}),
-      revealed: doc.revealedAt !== undefined,
-      ...(doc.draft ? { draft: doc.draft.text } : {}),
+      revealed,
+      ...(opened && doc.draft ? { draft: doc.draft.text } : {}),
       direct: doc.route?.channel === "direct",
-      ...(doc.route?.note ? { luBingNote: doc.route.note } : {}),
+      ...(opened && doc.route?.note ? { luBingNote: doc.route.note } : {}),
     };
   };
 
@@ -364,12 +384,41 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
     const { ruler, truth } = dayFor(at);
     lastDay = Math.max(lastDay, dayOf(at));
     switch (event.eventType) {
+      case "information.rumors":
+      case "information.bureau_prepared":
+        for (const fact of p.facts as unknown as IntelligenceFact[])
+          truth.push({ type: "intelligence", at, fact });
+        break;
+      case "information.message_opened":
+      case "document.revealed": {
+        const id = String(p.documentId);
+        if (!state.information) break;
+        if (!openAudience?.papers.some((x) => x.id === id))
+          ruler.push({
+            type: "audience",
+            at,
+            papers: [paper(id, at)],
+            oral: [],
+          });
+        break;
+      }
+      case "court.desk_added": {
+        if (openAudience) {
+          const index = ruler.indexOf(openAudience);
+          openAudience = {
+            ...openAudience,
+            papers: [...openAudience.papers, paper(String(p.documentId), at)],
+          };
+          if (index >= 0) ruler[index] = openAudience;
+        }
+        break;
+      }
       case "court.audience_opened": {
         const audience = p.audience as JsonObject;
         openAudience = {
           type: "audience",
           at,
-          papers: recipients(audience.documentIds).map(paper),
+          papers: recipients(audience.documentIds).map((id) => paper(id, at)),
           oral: recipients(audience.oralReportIds).map(
             (oid) => state.oralReports.find((o) => o.id === oid)?.text ?? "",
           ),
@@ -379,6 +428,14 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
       }
       case "court.admitted":
       case "court.declined":
+        if (event.eventType === "court.admitted" && openAudience) {
+          const index = ruler.indexOf(openAudience);
+          openAudience = {
+            ...openAudience,
+            papers: recipients(p.documentIds).map((id) => paper(id, at)),
+          };
+          if (index >= 0) ruler[index] = openAudience;
+        }
         ruler.push({
           type: "interruption",
           at,
