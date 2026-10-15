@@ -485,6 +485,8 @@ export const en = {
     "As Jiajing, you receive 5–10 message titles each noon: Yan Song, Lü Fang and Lu Bing can send direct briefs, the Transmission Office reports on Zhejiang and other provinces, and other papers pass through the Directorate. Titles are free; opening an unread message or calling for its original costs 1 of your 3 daily attention points; following a draft or holding it is free, while your own rescript or a conversation with Lü Fang costs another point. Retire for a day or enter seclusion; private thoughts and deeds emerge only at the segment’s end, and every advance calls the real DeepSeek—allow a minute or two.",
   "court.start": "Ascend the throne",
   "court.new": "Begin another reign",
+  "court.confirmNew":
+    "Begin a new reign? The current save will remain on disk, and this page will switch to the new reign.",
   "court.status.waiting": "At the desk",
   "court.status.running": "The court is moving",
   "court.status.failed": "Stalled",
@@ -1072,7 +1074,8 @@ export const zhCN: Record<MessageKey, string> = {
   "court.intro":
     "你是嘉靖皇帝，每日午时御案呈列 5–10 条消息标题：严嵩、吕芳、陆炳可直送条子，通政司报浙江与外省杂事，其余文书经司礼监。看标题免费，每日 3 点精力，展开未读消息、调阅摘要原本各耗 1 点；照票拟、留中免费，自改批红或召吕芳谈话另耗 1 点。可退朝过一天或闭关修玄，人物私下所思所为到本段结束才揭晓；每次推进调用真实 DeepSeek，要等一两分钟。",
   "court.start": "登基",
-  "court.new": "另开一局",
+  "court.new": "新开一局",
+  "court.confirmNew": "确定新开一局？旧局存档会保留，页面将切换到新局。",
   "court.status.waiting": "御览中",
   "court.status.running": "朝局运转中",
   "court.status.failed": "中途受阻",

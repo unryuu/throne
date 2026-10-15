@@ -1,6 +1,6 @@
 import type { Chronicle } from "@throne/court";
 
-export const summaryLimit = 120000;
+export const summaryLimit = 900000;
 
 export function excerpt(text: string, limit: number): string {
   if (text.length <= limit) return text;
@@ -27,11 +27,29 @@ export function excerpt(text: string, limit: number): string {
   return `〔节录〕${text.slice(start, start + limit)}`;
 }
 
-// Keep every day and decision; shorten text rather than silently dropping late-game events.
+// Preserve quote sources before deduplication; see docs/architecture/overview.md.
 export function summarizeChronicle(
   chronicle: Chronicle,
   maxChars = summaryLimit,
 ) {
+  const protectedTexts = new Set<string>();
+  const protect = (value: unknown): void => {
+    if (typeof value === "string") protectedTexts.add(value);
+    else if (Array.isArray(value)) value.forEach(protect);
+    else if (value && typeof value === "object")
+      Object.values(value).forEach(protect);
+  };
+  for (const day of chronicle.days) {
+    protect(day.ruler);
+    for (const entry of day.truth) {
+      if (entry.type !== "decision") continue;
+      protect(entry.thought);
+      protect(entry.report);
+      protect(entry.documents.filter((d) => d.kind !== "letter"));
+      protect(entry.actions);
+      protect(entry.drafts);
+    }
+  }
   const base = {
     id: chronicle.id,
     complete: chronicle.complete,
@@ -52,7 +70,11 @@ export function summarizeChronicle(
         } = entry;
         return {
           ...decision,
-          documents: entry.documents.map((d) => ({ to: d.to, text: d.text })),
+          documents: entry.documents.map((d) => ({
+            kind: d.kind,
+            to: d.to,
+            text: d.text,
+          })),
           drafts: entry.drafts.map((d) => ({ text: d.text })),
         };
       }),
@@ -101,7 +123,7 @@ export function summarizeChronicle(
     encoding: "对象 {$text:N} 表示 texts[N] 的原文，引用时展开。",
   };
 
-  for (const cap of [2400, 1200, 600, 300, 150, 80, 60, 40, 30, 20]) {
+  for (const cap of [maxChars, 2400, 1200, 600, 300, 150, 80, 40, 20]) {
     let truncatedFields = 0;
     const shrink = (value: unknown, key = ""): unknown => {
       if (typeof value === "string") {
@@ -118,7 +140,8 @@ export function summarizeChronicle(
             "kind",
             "units",
           ].includes(key) ||
-          value.length <= cap
+          value.length <= cap ||
+          protectedTexts.has(value)
         )
           return value;
         truncatedFields++;
@@ -197,7 +220,7 @@ export function summarizeChronicle(
     }
   }
   throw new Error(
-    `全局摘要结构超过 ${maxChars} 字符；未丢弃日期或决策，请调整摘要预算`,
+    `全局摘要核心原文超过 ${maxChars} 字符；未丢弃日期或决策，也未截断所想、御前所言及行动描述，请调整摘要预算`,
   );
 }
 

@@ -71,6 +71,61 @@ describe("storyteller quotes", () => {
 });
 
 describe("bounded whole-run summary", () => {
+  it("shortens private letters before touching full thoughts, imperial papers, oral reports or deeds", () => {
+    const sample = chronicle.days
+      .flatMap((d) => d.truth)
+      .find((e) => e.type === "decision")!;
+    if (sample.type !== "decision") throw new Error("fixture");
+    const thought = "先想全局。".repeat(800) + "所想末尾也要保留。";
+    const report = "奴婢谨奏。".repeat(800) + "口奏末尾也要保留。";
+    const paper = "臣有本奏。".repeat(800) + "奏疏末尾也要保留。";
+    const deed = "暗遣差役。".repeat(800) + "行动末尾也要保留。";
+    const letter = "私信次要材料。".repeat(4000);
+    const result = summarizeChronicle(
+      {
+        ...chronicle,
+        days: [
+          {
+            ...chronicle.days[0]!,
+            ruler: [],
+            truth: [
+              {
+                ...sample,
+                thought,
+                report,
+                documents: [
+                  {
+                    kind: "memorial",
+                    to: ["嘉靖"],
+                    subject: "奏疏",
+                    text: paper,
+                  },
+                  {
+                    kind: "letter",
+                    to: ["严嵩"],
+                    subject: "私信",
+                    text: letter,
+                  },
+                ],
+                actions: [{ capability: "breach_dike", description: deed }],
+                terminal: [
+                  { command: "不要保留的终端", output: letter, error: false },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      22000,
+    );
+    for (const source of [thought, report, paper, deed])
+      expect(result.text).toContain(source);
+    expect(result.text).not.toContain(letter);
+    expect(result.text).not.toContain("不要保留的终端");
+    expect(result.truncatedFields).toBeGreaterThan(0);
+    expect(result.chars).toBeLessThanOrEqual(22000);
+  });
+
   it("fits hundreds of distinct decisions without dropping the final day or actors", () => {
     const sample = chronicle.days
       .flatMap((d) => d.truth)
@@ -106,13 +161,15 @@ describe("bounded whole-run summary", () => {
         })),
       })),
     };
-    const result = summarizeChronicle(large);
+    const result = summarizeChronicle(large, 500000);
     expect(result.chars).toBeLessThanOrEqual(summaryLimit);
     expect(result.truncatedFields).toBeGreaterThan(0);
     for (const day of large.days)
       for (const entry of day.truth) {
-        if (entry.type === "decision")
+        if (entry.type === "decision") {
           expect(result.text).toContain(entry.episode);
+          expect(result.text).toContain(entry.thought);
+        }
       }
     expect(result.text).toContain("episode-80-2");
     expect(result.text).toContain("actor-2");
@@ -145,7 +202,7 @@ describe("bounded whole-run summary", () => {
                     error: false,
                   },
                 ],
-                thought: e.thought + "长".repeat(10000),
+                thought: e.thought + "长".repeat(3000),
               }
             : e,
         ),
@@ -153,7 +210,7 @@ describe("bounded whole-run summary", () => {
     };
     const result = summarizeChronicle(huge);
     expect(result.chars).toBeLessThanOrEqual(summaryLimit);
-    expect(result.truncatedFields).toBeGreaterThan(0);
+    expect(result.truncatedFields).toBe(0);
     expect(result.text).not.toContain("SECRET_TERMINAL");
     const encoded = JSON.parse(result.text);
     const expand = (value: unknown): unknown => {
@@ -171,6 +228,24 @@ describe("bounded whole-run summary", () => {
       return value;
     };
     const parsed = expand(encoded.data) as Chronicle;
+    for (const [index, day] of huge.days.entries()) {
+      const actual = parsed.days[index]!.truth.filter(
+        (e) => e.type === "decision",
+      );
+      const expected = day.truth.filter((e) => e.type === "decision");
+      expect(actual.map((e) => e.thought)).toEqual(
+        expected.map((e) => e.thought),
+      );
+      expect(actual.map((e) => e.report)).toEqual(
+        expected.map((e) => e.report),
+      );
+      expect(actual.map((e) => e.actions ?? [])).toEqual(
+        expected.map((e) => e.actions),
+      );
+      expect(actual.map((e) => (e.documents ?? []).map((d) => d.text))).toEqual(
+        expected.map((e) => e.documents.map((d) => d.text)),
+      );
+    }
     expect(parsed.days.map((d) => d.day)).toEqual(
       chronicle.days.map((d) => d.day),
     );

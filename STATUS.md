@@ -28,4 +28,6 @@ Imperial questions and opening (2026-10-15): the emperor can ask any live minist
 
 Imperial inbox (2026-10-15): each day the emperor gets 5–10 titled messages (notes straight from Yan Song, Lü Fang and Lu Bing; 通政司 reports built from engine facts, some leaked truth, some routine, a few false; plus memorials). Titles are free; opening one, talking to Lü Fang or a personal edict costs 1 of 3 daily energy; following a draft unread is free. Lu Bing gets 1–3 rumours a day without knowing which are true. Rules: [ADR 0010](docs/architecture/0010-imperial-inbox.md); 20-day playtest: [FEAT-0011](docs/issues/archive/court-inbox-2026-10-15.md). The 通政司 clerk now writes freely around each fact (no raw engine numbers). Open: the desk shows each message as a full card rather than a compact title list.
 
+Sharing (2026-10-15): friends clone the repo and run `npm run play`, which installs dependencies, asks once for a DeepSeek key (hidden input, saved to `secret/`), starts the game and opens the browser; the web court has a "新开一局" button. README estimates a full game at about 23M tokens, roughly $1.6–3.2 at 2026-10-15 prices. Land-for-grain now fails where there are no flood victims and no flooded land; the storyteller keeps every actor's full thoughts in its input.
+
 Next: see [HANDOFF.md](HANDOFF.md).

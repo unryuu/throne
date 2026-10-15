@@ -90,6 +90,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const [specials, setSpecials] = useState<Special[]>([]);
   const [review, setReview] = useState<CourtReview>();
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string>();
   const [verified, setVerified] = useState(false);
   const [talk, setTalk] = useState("");
@@ -102,11 +103,26 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const deskIds = snapshot?.view.audience?.documents.map((d) => d.id).join();
 
   useEffect(() => {
+    let cancelled = false;
     const id = recall();
     if (id)
       void request<CourtSnapshot>("/" + id)
-        .then(setSnapshot)
-        .catch(() => remember());
+        .then((next) => {
+          if (!cancelled) setSnapshot(next);
+        })
+        .catch((e: Error) => {
+          if (!cancelled) {
+            setError(e.message);
+            remember();
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setRestoring(false);
+        });
+    else setRestoring(false);
+    return () => {
+      cancelled = true;
+    };
   }, []);
   useEffect(() => {
     if (!snapshot) return;
@@ -116,7 +132,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
     setTalk("");
     setSeclusion(1);
     setStanding(snapshot.view.standing);
-  }, [audienceId]);
+  }, [snapshot?.id, audienceId]);
   useEffect(() => {
     // Papers can join an open desk: after admitting an interruption or when Lü brings them.
     setChoices((current) => {
@@ -125,7 +141,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
         next[d.id] ??= initialChoice(d);
       return next;
     });
-  }, [audienceId, deskIds]);
+  }, [snapshot?.id, audienceId, deskIds]);
   useEffect(() => {
     if (snapshot?.status !== "running") return;
     let cancelled = false;
@@ -236,7 +252,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
       setSnapshot(await request<CourtSnapshot>(`/${snapshot.id}/retry`, {}));
     });
 
-  const pending = busy || snapshot?.status === "running";
+  const pending = restoring || busy || snapshot?.status === "running";
   const view = snapshot?.view;
   return (
     <div className="court-play">
@@ -246,15 +262,15 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           <p>{error ?? snapshot?.error}</p>
         </div>
       ) : null}
-      {!snapshot || snapshot.status === "complete" ? (
-        <button
-          className="restart-button"
-          disabled={pending}
-          onClick={() => void start()}
-        >
-          {t(snapshot ? "court.new" : "court.start")}
-        </button>
-      ) : null}
+      <button
+        className="restart-button"
+        disabled={pending}
+        onClick={() => {
+          if (!snapshot || window.confirm(t("court.confirmNew"))) void start();
+        }}
+      >
+        {t(snapshot ? "court.new" : "court.start")}
+      </button>
       {snapshot && view ? (
         <>
           <p className="panel-label court-clock">

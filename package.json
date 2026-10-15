@@ -8,6 +8,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "play": "node play.mjs",
     "build": "pnpm typecheck && pnpm --filter @throne/web --filter @throne/spectator build",
     "demo": "pnpm --filter @throne/sim-cli demo",
     "dev": "pnpm --filter @throne/web dev",

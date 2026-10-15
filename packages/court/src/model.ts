@@ -777,6 +777,14 @@ function resolveAction(ctx: Context, actionId: string): void {
             : "merchantGrain";
       const amount = round1(Math.min(Number(p.amount), state[key]));
       if (amount <= 0) return finish("failed", { reason: "粮已拨尽" });
+      if (
+        key === "merchantGrain" &&
+        county.homeless === 0 &&
+        county.floodedMu === 0
+      )
+        return finish("failed", {
+          reason: "县中既无灾民也无淹田，办不成以粮换田",
+        });
       ctx.commit("resources.updated", {
         patch: { [key]: round1(state[key] - amount) },
       });

@@ -25,23 +25,19 @@
 
 ## 自己当皇帝
 
-需要 Node.js 22.12 以上和一个 [DeepSeek API 密钥](https://platform.deepseek.com/)。
+需要 [Node.js 22.12+](https://nodejs.org/)、git 和一个 [DeepSeek API 密钥](https://platform.deepseek.com/)，无需预装 pnpm。
 
 ```bash
 git clone https://github.com/unryuu/throne.git
 cd throne
-npx pnpm@11 install
+npm run play
 ```
 
-把密钥写进 `secret/deepseek.txt`（只放一行，这个目录不会进 Git），或者设环境变量 `DEEPSEEK_API_KEY`。然后：
+首次启动会自动装依赖；看到“粘贴你的 DeepSeek key：”后粘贴密钥、按回车（输入不回显），浏览器会自动打开嘉靖朝，点“登基”开玩。密钥存进本机 `secret/deepseek.txt`（不会进 Git），以后不再问；已有 `DEEPSEEK_API_KEY` 环境变量也可直接用。按 Ctrl+C 关闭服务。
 
-```bash
-npx pnpm@11 dev
-```
+每天 5–10 条消息，免费看标题；每天 3 点精力，用来展开消息、召吕芳谈话或发特旨。可以不看正文就照票拟批，也可以闭关。每一步都会存档，重启能接着玩；“新开一局”经确认后另起一局，旧档保留，局终可看完整复盘。
 
-打开 <http://127.0.0.1:4173>，默认就是嘉靖朝。每天午时御案上会有本章，你可以照票拟批、自己写朱批、发特旨、派锦衣卫、拿问大臣，也可以闭关。
-
-**时长与花费**：推进一天要等 1–2 分钟，大臣们在这段时间里各自过他们的一天。实测 15 天的短局用了约 79 万 token，其中 63 万命中缓存；完整一局 76 天，按此估算约 300–500 万 token。按 [DeepSeek 价目](https://api-docs.deepseek.com/quick_start/pricing)计费，缓存命中部分便宜得多。每一步都会存档，服务重启后可以接着玩；局终可以看完整复盘。
+**时长与花费**：一局 76 个模拟日，每次推进通常等 1–2 分钟，完整玩下来可预留约 2–3 小时，再加阅读、斟酌的时间；可随时停下。[现行版本实测](docs/issues/archive/court-inbox-2026-10-15.md#调用与-token)前 20 天约 **606 万 token**：输入 552 万，其中缓存命中 499 万，输出 54 万。简单按天外推，76 天约 **2,300 万 token**，长局档案累积、对话次数都会改变实际用量。按 2026-10-15 核实的 [DeepSeek 官方价目](https://api-docs.deepseek.com/quick_start/pricing/)（`deepseek-flash` 每百万 token：缓存输入 $0.003–0.006、未缓存输入 $0.15–0.30、输出 $0.60–1.20，随峰谷时段变化），上述 20 天约 **$0.42–0.84**，76 天外推约 **$1.60–3.20**；局后说书另有一次调用，以上不是固定套餐价。
 
 ## 它怎么运转
 

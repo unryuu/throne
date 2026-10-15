@@ -1,5 +1,7 @@
 # 当前功能
 
+已完成：[分享前启动与小修](archive/share-and-play-2026-10-15.md)。
+
 实现中：[FEAT-0006 嘉靖朝·改稻为桑](active/court-jiajing.md)；[FEAT-0009 人物 agent 化](active/agent-shell.md)已接入引擎；[FEAT-0010 更好玩与名场面](active/playability.md)的观战页、结局卡和 README 已做，其余未排期。
 
 FEAT-0011 已完成：[御前消息与皇帝精力](archive/court-inbox-2026-10-15.md)、[御案标题列表](archive/court-inbox-list.md)；规则见 [ADR 0010](../architecture/0010-imperial-inbox.md)。

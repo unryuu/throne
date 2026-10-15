@@ -1,24 +1,44 @@
-# HANDOFF：观战里程碑之后
+# HANDOFF：御前消息流之后
 
-写于 2026-10-06，分支 `feat/jiajing-court`。先按 AGENTS.md 读 STATUS。
+写于 2026-10-15，分支 `feat/jiajing-court`（`main` 与之同步，观战页从 `main` 发布）。先读 STATUS.md。
 
-## 刚做完
+## 这一窗口做了什么
 
-[FEAT-0010](docs/issues/active/playability.md) 第一部分的三件：观战页 `apps/spectator`、结局卡、README 改为讲故事。做法与取舍写在 FEAT-0010“已做”一节，导出原理在 [architecture overview](docs/architecture/overview.md) 末段。这一轮没有调用模型。
+- 观战页上线 GitHub Pages（https://unryuu.github.io/throne/），三局：建德决堤、一本真账（现行终端模式完整一局）、终端里的十五天。名场面和结局卡都是开发 agent 手写的，页面上没注明“代拟”，用户知道此事，未决定要不要标。
+- 本机存档可在观战页看；局后说书人（DeepSeek）自动挑名场面写结局卡。与手写版对照：`runs/storyteller/对照.md`（本机，不进 git）。
+- 具奏垂询、开局全员行动、跳过空日（ADR 0009）；御前消息流：每日 5–10 条、3 点精力、三人条子、通政司、陆炳风闻（ADR 0010，试玩记录 FEAT-0011）；网页御案改为紧凑列表。
+- 朋友一行命令开玩：`npm run play`（装依赖、问一次 key、开浏览器；已在全新 clone 上实测）。网页有“新开一局”。README 估一局约 2,300 万 token、约 $1.6–3.2。
+- 以粮换田在无灾民、无淹田时办不成；说书人摘要改为保留完整所想。
 
-## 候选的下一步（未排期，待用户挑）
+## 用户定下的原则
 
-1. **自己玩的局也能观战**：开发服务提供 `buildChronicle` 的结果，局终复盘链到观战页。不调模型。
-2. **局后说书人**：局终调一次模型，挑出最有戏的几段并起标题，自动生成结局卡的欺瞒名单和反差；现在这些是手选的（`apps/spectator/src/runs.ts`）。
-3. **用现行终端模式重跑一局完整对局**，戏好就换成观战页的主推局。约 76 天，每天 1–2 分钟，要花 DeepSeek。
-4. 局中揭穿（对质、召见套话、调阅账簿）、财政（切片 C）、年终内阁会议（切片 D），见 FEAT-0010。
+- **好玩优先于逐字准确**：说书人、通政司这类“写文案”的模型，提示词不要层层设防。
+- **DeepSeek 便宜，设计时不用顾虑省钱**：不要为省调用削弱设计；成本只作为事实报告。
+- 方向：模拟皇帝更真实的信息流和决策体验——消息多到看不完，标题由递话人自己写，渠道之间说法对不上，皇帝靠对照制衡。
+
+## 经验
+
+- **Codex 写模型提示词会过度设防**：说书人（逐字核验、丢弃引文）和通政司（只许选模板、事实句照抄，结果满纸“0万亩”“民怨0.1”）都出过，都由 Claude 改松。以后验收 Codex 的活，先看它给模型写的提示词。
+- **一本真账的发现**：引擎没有任何人持有真账（杨金水的簿子只记自己经手的买田），于是没人撒谎也造出了一场“假账风波”，真问题（以粮换田 12.9 万亩）反而没人报。这是信息流设计可以有意利用的东西。说书人看不出这种只藏在数字里的反转。
+- **假风闻会跨渠道互相背书**（FEAT-0011）：陆炳报的假数字被吕芳写成“缇骑密访”，陆炳自己随后也信了。
+- **路程**：京杭 5–6 日，台州 7 日；垂询胡宗宪一来一回约两周。
+- **用量**：消息流上线后约 30 万 tokens/天（多数命中缓存）。
+- 坑：`.gitignore` 的 `runs/` 曾误伤 `apps/spectator/public/runs/`，已改为 `/runs/`；观战数据进 `public/runs/` 后必须在 `runs.ts` 登记，否则是死文件。旧的观战开发服务会占着 4174 端口跑旧代码。macOS 没有 `timeout` 命令。
 
 ## 待用户
 
-名场面清单；上面几项的取舍与排期；公开仓库命名（README 暂用“Throne · 嘉靖朝模拟器”，注明灵感来自《大明王朝1566》）。
+- 用户要亲自玩一局（还没人真人玩过消息流，之前都是代玩脚本）。玩完后要问的：3 点精力紧不紧；能不能从标题看出谁在报喜；通政司和陆炳的矛盾是让人想深究还是噪音；每天等待是否太慢。
+- 已发布结局卡要不要标“开发者代拟”。
 
-## 环境与坑
+## 候选的下一步（未排期）
 
-- 没有全局 pnpm，用 `npx -y pnpm@11.19.0 <script>`。`throne-web` 端口 4173，`throne-spectator` 端口 4174（`.claude/launch.json`）。预览工具启动 `throne-spectator` 时出现过服务没起来、日志为空的情况，手动 `npx -y pnpm@11.19.0 spectator` 正常。
-- 加一局到观战页：`npx tsx apps/spectator/scripts/export-run.ts <局号> <slug>`，再在 `runs.ts` 登记标题、说明和名场面；`runs.test.ts` 会核对引文是否为人物原话。引擎新增事件类型时，导出会报错，需要在 `chronicle.ts` 里决定怎么显示。
-- 代玩：`npx tsx apps/web/server/court-autoplay.ts [天数]`，不需要开发服务。存档在 gitignored 的 `runs/court/`，密钥在 `secret/deepseek.txt`；真实调用要联网。`THRONE_NPC_MODE=form` 切回一次填表。
+1. 召见：皇帝当面问人。严嵩、陆炳在京，没有路程，最适合出名场面（FEAT-0010 第二部分）。
+2. 用新规则重跑一局完整对局，戏好就上观战页，顺便看说书人保留完整所想后引文还会不会大量变转述。
+3. 财政（切片 C）、年终内阁会议（切片 D），见 FEAT-0010。
+4. 紧凑御案还没在手机窄屏上看过。
+
+## 环境
+
+- 自己玩：`npm run play`（Windows/Linux 未实机测过）；或 `npx -y pnpm@11.19.0 dev` 后开 http://localhost:4173 。观战：`npx -y pnpm@11.19.0 spectator`（4174）。
+- 代玩：`npx tsx apps/web/server/court-autoplay.ts [天数]`；说书人：`npx tsx apps/spectator/scripts/storyteller.ts <局号> [--force]`；导出到观战页：`npx tsx apps/spectator/scripts/export-run.ts <局号> <slug>` 后在 `runs.ts` 登记。
+- 存档在 gitignored 的 `runs/court/`，密钥在 `secret/deepseek.txt`。
