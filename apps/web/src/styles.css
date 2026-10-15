@@ -1926,3 +1926,16 @@ article p {
   background: #25261e;
   line-height: 1.9;
 }
+
+.court-glossary dl > div {
+  display: grid;
+  grid-template-columns: 6em minmax(0, 1fr);
+  gap: 0.75em;
+  margin-block: 0.5em;
+}
+.court-glossary dt {
+  font-weight: 600;
+}
+.court-glossary dd {
+  margin: 0;
+}

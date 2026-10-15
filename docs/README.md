@@ -15,7 +15,7 @@
 - [终端人物与精力](architecture/0008-terminal-actors.md)：人物经假终端过一天，写信做事花精力。
 - [具奏垂询与开局节奏](architecture/0009-imperial-questions.md)：亲问回奏、首日行动与跳过空御览。
 - [御前消息与精力](architecture/0010-imperial-inbox.md)：多渠道消息、条子、通政司与陆炳风闻。
-- [归纳、深思与开局语体](architecture/0011-ponder-summary-register-terminal.md)：新局阅读免费、每日两点精力、文言三档；终端御案另行实现。
+- [归纳、深思与开局语体](architecture/0011-ponder-summary-register-terminal.md)：新局阅读免费、每日两点精力、文言三档；终端御案入口与按键见根目录 README。
 - 观战页：`apps/spectator`，导出与名场面说明见 [FEAT-0010](issues/active/playability.md#已做2026-10-06)。
 - [issues](issues/README.md)：当前缺陷和功能；小型整理用提交说明交代。
 

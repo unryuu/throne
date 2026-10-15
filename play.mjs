@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = dirname(fileURLToPath(import.meta.url));
 const windows = process.platform === "win32";
 let child;
+let childDetached = false;
 let stopping = false;
 let cancelInput;
 
@@ -21,7 +22,8 @@ function stop() {
     killer.on("error", () => child?.kill());
   } else {
     try {
-      process.kill(-child.pid, "SIGTERM");
+      if (childDetached) process.kill(-child.pid, "SIGTERM");
+      else child.kill("SIGTERM");
     } catch (error) {
       if (error.code !== "ESRCH") throw error;
     }
@@ -30,17 +32,18 @@ function stop() {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 
-function run(command, args, cwd = root) {
+function run(command, args, cwd = root, interactive = false) {
   if (stopping) throw new Error("已退出");
   return new Promise((resolve, reject) => {
     const current = spawn(command, args, {
       cwd,
-      stdio: ["ignore", "inherit", "inherit"],
-      detached: !windows,
+      stdio: [interactive ? "inherit" : "ignore", "inherit", "inherit"],
+      detached: !windows && !interactive,
       // Only the fixed npx command uses cmd.exe; keys never enter a command line.
       shell: windows && command === "npx",
     });
     child = current;
+    childDetached = !windows && !interactive;
     current.on("error", reject);
     current.on("close", (code, signal) => {
       child = undefined;
@@ -126,30 +129,48 @@ async function main() {
   }
   if (stopping) return;
 
-  const keyPath = join(root, "secret/deepseek.txt");
-  if (process.env.DEEPSEEK_API_KEY !== undefined) {
-    if (!process.env.DEEPSEEK_API_KEY.trim())
-      throw new Error(
-        "DEEPSEEK_API_KEY 是空的，请取消该环境变量或填入有效密钥。",
-      );
-  } else if (!(await exists(keyPath))) {
-    let key;
-    do {
-      key = await readKey();
-      if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(key))
-        console.log("密钥格式不对：应为 sk- 开头的完整密钥，请重新粘贴。");
-    } while (!/^sk-[A-Za-z0-9_-]{16,}$/.test(key));
-    await mkdir(dirname(keyPath), { recursive: true, mode: 0o700 });
-    const file = await open(keyPath, "wx", 0o600);
-    try {
-      await file.writeFile(key + "\n");
-    } finally {
-      await file.close();
+  const demo = process.argv.includes("--demo");
+  const web = process.argv.includes("--web");
+  if (demo && web) throw new Error("--demo 是终端演示，请不要同时传 --web。");
+  if (!demo) {
+    const keyPath = join(root, "secret/deepseek.txt");
+    if (process.env.DEEPSEEK_API_KEY !== undefined) {
+      if (!process.env.DEEPSEEK_API_KEY.trim())
+        throw new Error(
+          "DEEPSEEK_API_KEY 是空的，请取消该环境变量或填入有效密钥。",
+        );
+    } else if (!(await exists(keyPath))) {
+      let key;
+      do {
+        key = await readKey();
+        if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(key))
+          console.log("密钥格式不对：应为 sk- 开头的完整密钥，请重新粘贴。");
+      } while (!/^sk-[A-Za-z0-9_-]{16,}$/.test(key));
+      await mkdir(dirname(keyPath), { recursive: true, mode: 0o700 });
+      const file = await open(keyPath, "wx", 0o600);
+      try {
+        await file.writeFile(key + "\n");
+      } finally {
+        await file.close();
+      }
+      console.log("密钥已保存到 secret/deepseek.txt，以后无需再输入。");
     }
-    console.log("密钥已保存到 secret/deepseek.txt，以后无需再输入。");
+    if (stopping) return;
   }
-  if (stopping) return;
-
+  if (!web) {
+    console.log(
+      demo
+        ? "进入终端演示：不联网，不需要密钥。"
+        : "进入嘉靖朝：方向键与回车操作，? 查看小抄，Ctrl+C 退出。",
+    );
+    await run(
+      process.execPath,
+      ["--import", "tsx", "apps/web/tui/main.ts", ...(demo ? ["--demo"] : [])],
+      root,
+      true,
+    );
+    return;
+  }
   const require = createRequire(join(root, "apps/web/package.json"));
   const vite = join(
     dirname(require.resolve("vite/package.json")),

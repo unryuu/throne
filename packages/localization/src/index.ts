@@ -37,3 +37,31 @@ export function translateToken(translator: Translator, value: string): string {
 }
 
 export type { MessageKey } from "./catalogs.ts";
+
+export function courtGlossary(
+  t: Translator,
+): readonly { readonly term: string; readonly definition: string }[] {
+  return (
+    [
+      "follow",
+      "draft",
+      "hold",
+      "rescript",
+      "custom",
+      "special",
+      "reprimand",
+      "arrest",
+      "question",
+      "seclusion",
+      "directorate",
+      "bureau",
+      "guard",
+      "rumor",
+      "brief",
+      "energy",
+    ] as const
+  ).map((key) => ({
+    term: t(`court.glossary.${key}`),
+    definition: t(`court.glossary.${key}.definition`),
+  }));
+}

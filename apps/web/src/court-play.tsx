@@ -1,3 +1,4 @@
+import { courtGlossary } from "@throne/localization";
 import { useEffect, useState } from "react";
 import type { Locale, MessageKey, Translator } from "@throne/localization";
 import {
@@ -294,7 +295,14 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
       </fieldset>
       <details className="court-glossary">
         <summary>{t("court.glossary")}</summary>
-        <p>{t("court.glossaryText")}</p>
+        <dl>
+          {courtGlossary(t).map(({ term, definition }) => (
+            <div key={term}>
+              <dt>{term}</dt>
+              <dd>{definition}</dd>
+            </div>
+          ))}
+        </dl>
       </details>
       {error || snapshot?.error ? (
         <div role="alert" className="play-error">

@@ -8,7 +8,7 @@ import {
   type RulerDocumentView,
 } from "@throne/court";
 import { createTranslator } from "@throne/localization";
-import { DeskDocument } from "./court-play.tsx";
+import { CourtPlay, DeskDocument } from "./court-play.tsx";
 
 const view = {
   ...courtRulerView(createInitialState("desk-test"), at(0, 6)),
@@ -255,4 +255,15 @@ it("new reigns allow free reading at zero energy and keep glosses and ponder res
   expect(html.indexOf("court-inbox-body")).toBeLessThan(
     html.indexOf("（想找皇帝要钱）"),
   );
+});
+
+it("renders the shared glossary as distinct term/definition rows in both languages", () => {
+  for (const locale of ["zh-CN", "en"] as const) {
+    const html = renderToStaticMarkup(
+      <CourtPlay locale={locale} t={createTranslator(locale)} />,
+    );
+    expect(html.match(/<dt>/g)).toHaveLength(16);
+    expect(html.match(/<dd>/g)).toHaveLength(16);
+    expect(html).toContain("<dt>依拟</dt><dd>");
+  }
 });
