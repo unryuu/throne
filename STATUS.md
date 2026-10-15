@@ -30,4 +30,6 @@ Imperial inbox (2026-10-15): each day the emperor gets 5–10 titled messages (n
 
 Sharing (2026-10-15): friends clone the repo and run `npm run play`, which installs dependencies, asks once for a DeepSeek key (hidden input, saved to `secret/`), starts the game and opens the browser; the web court has a "新开一局" button. README estimates a full game at about 23M tokens, roughly $1.6–3.2 at 2026-10-15 prices. Land-for-grain now fails where there are no flood victims and no flooded land; the storyteller keeps every actor's full thoughts in its input.
 
+Ponder, summaries, register, terminal desk (2026-10-15): reading is now free and the emperor has 2 energy a day; pondering a message (a DeepSeek monologue in Jiajing's voice, built only from what the emperor has seen), talking to Lü Fang, a personal edict or a rewritten rescript each cost 1. A neutral outside reader adds a one-line plain-Chinese gloss to each message. New games choose classical / plain / modern register. `npm run play` now opens a full-screen terminal desk driven by arrow keys and Enter (`--web` for the browser, `--demo` without a key). Old saves keep their old rules. Rules: [ADR 0011](docs/architecture/0011-ponder-summary-register-terminal.md); notes: [FEAT-0012](docs/issues/active/ponder-summary-register.md). Not yet played by a human.
+
 Next: see [HANDOFF.md](HANDOFF.md).
