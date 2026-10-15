@@ -173,6 +173,21 @@ mark {
   color: var(--vermilion);
 }
 
+.local-run-id {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.local-status {
+  margin: 20px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--vermilion);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.local-status .loading {
+  padding: 0;
+}
+
 .cover-actions {
   display: flex;
   flex-wrap: wrap;

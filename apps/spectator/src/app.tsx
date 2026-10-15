@@ -10,6 +10,8 @@ import type {
 import { createTranslator, type MessageKey } from "@throne/localization";
 import { runs, type RunMeta, type Scene } from "./runs.ts";
 
+import { LocalRuns, localId, useLocalRun } from "./local.tsx";
+
 const t = createTranslator("zh-CN");
 const label = (prefix: string, value: string) => {
   const key = `${prefix}.${value}` as MessageKey;
@@ -21,13 +23,16 @@ const repo = "https://github.com/unryuu/throne";
 type View = "ruler" | "truth";
 type Route =
   | { page: "home" }
+  | { page: "local" }
   | { page: "cover"; slug: string }
   | { page: "day"; slug: string; day: number; view: View }
   | { page: "end"; slug: string };
 
 function parseHash(hash: string): Route {
   const [slug, a, b] = hash.replace(/^#\/?/, "").split("/");
-  if (!slug || !runs.some((r) => r.slug === slug)) return { page: "home" };
+  if (import.meta.env.DEV && slug === "local") return { page: "local" };
+  if (!slug || (!runs.some((r) => r.slug === slug) && !localId(slug)))
+    return { page: "home" };
   if (a === "end") return { page: "end", slug };
   if (a !== undefined && /^\d+$/.test(a))
     return {
@@ -42,6 +47,8 @@ function href(route: Route): string {
   switch (route.page) {
     case "home":
       return "#/";
+    case "local":
+      return "#/local";
     case "cover":
       return `#/${route.slug}`;
     case "end":
@@ -98,9 +105,29 @@ function useChronicle(slug: string | undefined) {
 
 export function App() {
   const route = useRoute();
-  const slug = route.page === "home" ? undefined : route.slug;
-  const run = runs.find((r) => r.slug === slug);
-  const loaded = useChronicle(slug);
+  const slug =
+    route.page === "home" || route.page === "local" ? undefined : route.slug;
+  const id = localId(slug);
+  const local = useLocalRun(id);
+  const curated = useChronicle(id ? undefined : slug);
+  const loaded = id ? local : curated;
+  const run: RunMeta | undefined =
+    id && slug
+      ? {
+          id,
+          slug,
+          title: `本机对局 · ${id.slice(0, 8)}`,
+          blurb: local?.data?.complete
+            ? "本局已结束，可逐日对照皇帝所见与实情。"
+            : "本局尚未结束，以下是当前存档的记录。",
+          notes: [
+            "本机存档只读展示。继续游玩后，刷新页面可读取最新进展。",
+            "名场面与结局评述由说书人（模型）挑选；标题、旁注与判词是它的演绎，标“转述”的引文在记录里找不到原话。",
+          ],
+          scenes: local?.story?.scenes ?? [],
+          ...(local?.story?.ending ? { ending: local.story.ending } : {}),
+        }
+      : runs.find((r) => r.slug === slug);
   return (
     <div className="page">
       <header className="masthead">
@@ -117,13 +144,44 @@ export function App() {
               {r.title}
             </a>
           ))}
+          {import.meta.env.DEV && (
+            <a
+              href="#/local"
+              className={route.page === "local" || id ? "on" : ""}
+            >
+              本机存档
+            </a>
+          )}
           <a href={repo} className="repo">
             自己当皇帝 ↗
           </a>
         </nav>
       </header>
       <main>
-        {route.page === "home" || !run ? (
+        {id && (
+          <aside className="local-status" aria-live="polite">
+            {local?.generating && (
+              <p className="loading">
+                说书人正在通读全局、挑选名场面……可以先逐日观战。
+              </p>
+            )}
+            {local?.storyError && (
+              <p className="error">说书人生成失败：{local.storyError}</p>
+            )}
+            {local?.story && (
+              <p>
+                说书人（模型）挑选 · 引文对上原话{" "}
+                {local.story.verification.exact +
+                  local.story.verification.loose}{" "}
+                条，转述 {local.story.verification.retold} 条。
+              </p>
+            )}
+            <button onClick={() => location.reload()}>刷新本局记录</button>
+          </aside>
+        )}
+        {route.page === "local" ? (
+          <LocalRuns />
+        ) : route.page === "home" || !run ? (
           <Home />
         ) : loaded?.error ? (
           <p className="error">{loaded.error}</p>
@@ -195,6 +253,9 @@ function Cover({ run, chronicle }: { run: RunMeta; chronicle: Chronicle }) {
         </a>
       </div>
       <h2>名场面</h2>
+      {run.scenes.length === 0 && (
+        <p className="quiet">暂无名场面，可从第一天逐日翻看。</p>
+      )}
       <ol className="scenes">
         {run.scenes.map((s) => (
           <li key={s.day + s.title}>
@@ -758,6 +819,7 @@ function Ending({ run, chronicle }: { run: RunMeta; chronicle: Chronicle }) {
       <div className="card">
         <p className="card-title">
           {run.title} · {chronicle.complete ? "御批" : `至第 ${lastDay.day} 日`}
+          {localId(run.slug) && run.ending && " · 说书人（模型）评述"}
         </p>
         {run.ending && <p className="verdict">{run.ending.verdict}</p>}
         <dl className="stats">
@@ -826,14 +888,34 @@ function Ending({ run, chronicle }: { run: RunMeta; chronicle: Chronicle }) {
                 view: "truth",
               })}
             >
-              <div>
-                <span className="tag">心里</span>
-                {highlightScene.thought}
-              </div>
-              <div>
-                <span className="tag">奏疏</span>
-                {highlightScene.word}
-              </div>
+              {highlightScene.thought && (
+                <div>
+                  <span className="tag">
+                    所想
+                    {highlightScene.retold?.includes("thought") &&
+                      " · 说书人转述"}
+                  </span>
+                  {highlightScene.thought}
+                </div>
+              )}
+              {highlightScene.word && (
+                <div>
+                  <span className="tag">
+                    所言
+                    {highlightScene.retold?.includes("word") && " · 说书人转述"}
+                  </span>
+                  {highlightScene.word}
+                </div>
+              )}
+              {highlightScene.deed && (
+                <div>
+                  <span className="tag">
+                    所为
+                    {highlightScene.retold?.includes("deed") && " · 说书人转述"}
+                  </span>
+                  {highlightScene.deed}
+                </div>
+              )}
               <p className="meta">
                 第 {highlightScene.day} 日 · {highlightScene.title} →
               </p>

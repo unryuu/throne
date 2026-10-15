@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Chronicle, TruthEntry } from "@throne/court";
+import { quoteMatches } from "../shared/story.ts";
 import { runs } from "./runs.ts";
 
 const load = (slug: string): Chronicle =>
@@ -27,23 +28,13 @@ describe("curated runs", () => {
             e.type === "decision" && e.episode === scene.episode,
         );
         expect(decision, `${scene.episode} on day ${scene.day}`).toBeDefined();
-        if (scene.thought) expect(decision!.thought).toContain(scene.thought);
-        if (scene.word) {
-          const said = [
-            ...decision!.documents.map((d) => d.text),
-            ...decision!.drafts.map((d) => d.text),
-            decision!.report ?? "",
-          ];
-          expect(
-            said.some((t) => t.includes(scene.word!)),
-            scene.word,
-          ).toBe(true);
+        for (const field of ["thought", "word", "deed"] as const) {
+          if (scene[field])
+            expect(
+              quoteMatches(decision, field, scene[field]),
+              scene[field],
+            ).toBe(true);
         }
-        if (scene.deed)
-          expect(
-            decision!.actions.some((a) => a.description?.includes(scene.deed!)),
-            scene.deed,
-          ).toBe(true);
       }
       if (run.ending) expect(run.scenes[run.ending.highlight]).toBeDefined();
     });

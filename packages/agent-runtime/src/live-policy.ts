@@ -56,6 +56,7 @@ type LiveCall<T> = {
   readonly decisionEpisodeId: string;
   readonly systemPrompt: string;
   readonly maxTokens: number;
+  readonly timeoutMs?: number;
   readonly run: (harness: DeepSeekHarnessDecisionPolicy) => Promise<T>;
 };
 
@@ -115,6 +116,7 @@ async function callLive<T>(
       }
     },
   });
+  const timeoutMs = call.timeoutMs ?? 90000;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const base = {
     decisionEpisodeId: call.decisionEpisodeId,
@@ -131,8 +133,12 @@ async function callLive<T>(
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () =>
-            reject(new Error("DeepSeek decision timed out after 90 seconds")),
-          90000,
+            reject(
+              new Error(
+                `DeepSeek decision timed out after ${timeoutMs / 1000} seconds`,
+              ),
+            ),
+          timeoutMs,
         );
       }),
     ]);
@@ -200,13 +206,17 @@ export type LiveTextRequest = {
 export function createLiveTextModel(
   root: string,
   onTrace: (trace: LiveCallTrace) => void,
+  options: { readonly timeoutMs?: number; readonly maxTokens?: number } = {},
 ): (request: LiveTextRequest) => Promise<string> {
   return async (request) => {
     if (!request.systemPrompt.trim())
       throw new Error("Actor instructions must not be empty");
     const result = await callLive(root, onTrace, {
       decisionEpisodeId: request.decisionEpisodeId,
-      maxTokens: 32768,
+      maxTokens: options.maxTokens ?? 32768,
+      ...(options.timeoutMs !== undefined
+        ? { timeoutMs: options.timeoutMs }
+        : {}),
       systemPrompt: request.systemPrompt,
       run: (harness) =>
         harness.complete(

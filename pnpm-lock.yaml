@@ -53,6 +53,9 @@ importers:
 
   apps/spectator:
     dependencies:
+      '@throne/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@throne/court':
         specifier: workspace:*
         version: link:../../packages/court

@@ -59,7 +59,9 @@ npx pnpm@11 spectator   # 本地打开观战页（端口 4174）
 npx pnpm@11 build       # 构建
 ```
 
-从 [STATUS.md](STATUS.md) 和[文档入口](docs/README.md)开始；[SPEC](docs/SPEC.md) 是模拟原则，[DESIGN](docs/DESIGN.md) 是玩法意图，[架构总览](docs/architecture/overview.md)和各篇 ADR 记录仍生效的决定。网页里除了嘉靖朝，还有几个早期的机制演示标签。观战页的数据由 `apps/spectator/scripts/export-run.ts` 从存档导出，名场面在 `apps/spectator/src/runs.ts` 里手选，引文由测试核对必须是人物原话。
+启动观战服务后，在 `http://localhost:4174` 点“本机存档”，也可从主应用局终处点“逐日观战与说书人结局卡”。未完局可逐日看；完局首次打开会调用一次 DeepSeek 自动挑名场面，后续读取缓存。手动生成或重生成见[架构说明](docs/architecture/overview.md)。
+
+从 [STATUS.md](STATUS.md) 和[文档入口](docs/README.md)开始；[SPEC](docs/SPEC.md) 是模拟原则，[DESIGN](docs/DESIGN.md) 是玩法意图，[架构总览](docs/architecture/overview.md)和各篇 ADR 记录仍生效的决定。网页里除了嘉靖朝，还有几个早期的机制演示标签。静态站精选局的数据由 `apps/spectator/scripts/export-run.ts` 从存档导出，名场面在 `apps/spectator/src/runs.ts` 里手选，引文由测试核对必须是人物原话。
 
 ## In English
 

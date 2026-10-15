@@ -9,6 +9,7 @@
     "export": "tsx scripts/export-run.ts"
   },
   "dependencies": {
+    "@throne/agent-runtime": "workspace:*",
     "@throne/court": "workspace:*",
     "@throne/localization": "workspace:*",
     "@vitejs/plugin-react": "^6.1.1",

@@ -488,6 +488,24 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           {snapshot.status === "complete" ? (
             <article className="document live-result">
               <h3>{t("court.finished")}</h3>
+              {import.meta.env.DEV && (
+                <p>
+                  <a
+                    href={`http://${location.hostname}:4174/#/local-${snapshot.id}/end`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {locale === "en"
+                      ? "Watch this run & storyteller ending ↗"
+                      : "逐日观战与说书人结局卡 ↗"}
+                  </a>
+                  （
+                  {locale === "en"
+                    ? "start the spectator service on port 4174"
+                    : "需启动 4174 观战服务"}
+                  ）
+                </p>
+              )}
               <button
                 className="restart-button"
                 disabled={pending}

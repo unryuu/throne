@@ -11,6 +11,8 @@ export type Scene = {
   readonly word?: string;
   readonly deed?: string;
   readonly note: string;
+  /** Quotes the storyteller retold in its own words; not found in the record. */
+  readonly retold?: readonly ("thought" | "word" | "deed")[];
 };
 
 export type Deceiver = {
