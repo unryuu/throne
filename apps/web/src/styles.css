@@ -1570,6 +1570,102 @@ article p {
 .court-doc-report {
   border-left-color: #5d8a86;
 }
+.court-energy {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #6e5939;
+  background: #1d1e17;
+  color: #d9c39a;
+  line-height: 1.6;
+}
+.court-inbox {
+  margin-bottom: 22px;
+}
+.court-doc.court-inbox-item {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+.court-inbox-item + .court-inbox-item {
+  border-top: 0;
+}
+.court-inbox-row {
+  display: flex;
+  align-items: center;
+}
+.court-inbox-toggle {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.5fr) auto;
+  gap: 12px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 0;
+  background: transparent;
+  color: #cfc9b7;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.court-inbox-toggle:hover:not(:disabled),
+.court-inbox-toggle[aria-expanded="true"] {
+  background: #29291f;
+}
+.court-inbox-toggle:focus-visible,
+.court-inbox-disposition:focus-visible {
+  outline: 2px solid #bd9a68;
+  outline-offset: -3px;
+}
+.court-inbox-toggle:disabled {
+  cursor: not-allowed;
+}
+.court-inbox-source,
+.court-inbox-status {
+  font-size: 0.75rem;
+  color: #b2ab97;
+  line-height: 1.5;
+}
+.court-inbox-source,
+.court-inbox-subject {
+  overflow-wrap: anywhere;
+}
+.court-inbox-subject {
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  line-height: 1.6;
+}
+.court-inbox-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  max-width: 150px;
+}
+.court-inbox-unread {
+  color: #d9c39a;
+  font-weight: 700;
+}
+.court-inbox-reply {
+  color: #e0ad86;
+}
+.court-inbox-disposition {
+  max-width: 110px;
+  margin-right: 10px;
+  padding: 5px;
+  border: 1px solid #6e5939;
+  background: #1d1e17;
+  color: #d9c39a;
+  font: inherit;
+  font-size: 0.8rem;
+}
+.court-inbox-body {
+  padding: 16px 20px 20px;
+  border-top: 1px solid #3a3b31;
+  overflow-wrap: anywhere;
+}
 .court-subject {
   margin: 4px 0 12px;
   font-size: 1.12rem;
@@ -1773,6 +1869,18 @@ article p {
   font-style: italic;
 }
 @media (max-width: 640px) {
+  .court-inbox-toggle {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding: 10px 12px;
+  }
+  .court-inbox-status {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .court-inbox-body {
+    padding: 12px;
+  }
   .court-doc {
     padding: 16px;
   }

@@ -86,6 +86,7 @@ function initialChoice(d: RulerDocumentView): Choice {
 export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const [snapshot, setSnapshot] = useState<CourtSnapshot>();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [specials, setSpecials] = useState<Special[]>([]);
   const [review, setReview] = useState<CourtReview>();
   const [busy, setBusy] = useState(false);
@@ -110,6 +111,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   useEffect(() => {
     if (!snapshot) return;
     setChoices({});
+    setExpanded(new Set());
     setSpecials([]);
     setTalk("");
     setSeclusion(1);
@@ -315,7 +317,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
             <section className="court-desk" aria-label={t("court.desk")}>
               <h3>{t("court.desk")}</h3>
               {view.energy !== undefined ? (
-                <p role="status">
+                <p role="status" className="court-energy">
                   {t("court.energy", {
                     count: view.energy,
                     capacity: imperialRules.perDay,
@@ -331,26 +333,44 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               {view.audience.documents.length === 0 ? (
                 <p className="fog-note">{t("court.emptyDesk")}</p>
               ) : null}
-              {view.audience.documents.map((doc) => (
-                <DeskDocument
-                  key={doc.id}
-                  doc={doc}
-                  view={view}
-                  choice={choices[doc.id]}
-                  onChange={(next) =>
-                    setChoices({ ...choices, [doc.id]: next })
-                  }
-                  onOpen={() =>
-                    void act({ type: "open_message", documentId: doc.id })
-                  }
-                  onReveal={() =>
-                    void act({ type: "reveal", documentId: doc.id })
-                  }
-                  pending={pending}
-                  locale={locale}
-                  t={t}
-                />
-              ))}
+              <div
+                className={
+                  view.energy !== undefined ? "court-inbox" : undefined
+                }
+                role={view.energy !== undefined ? "list" : undefined}
+                aria-label={t("court.desk")}
+              >
+                {view.audience.documents.map((doc) => (
+                  <DeskDocument
+                    key={doc.id}
+                    doc={doc}
+                    view={view}
+                    choice={choices[doc.id]}
+                    onChange={(next) =>
+                      setChoices({ ...choices, [doc.id]: next })
+                    }
+                    onOpen={() =>
+                      void act({ type: "open_message", documentId: doc.id })
+                    }
+                    expanded={expanded.has(doc.id)}
+                    onToggle={() => {
+                      setExpanded((current) => {
+                        const next = new Set(current);
+                        if (doc.opened !== false && next.has(doc.id))
+                          next.delete(doc.id);
+                        else next.add(doc.id);
+                        return next;
+                      });
+                    }}
+                    onReveal={() =>
+                      void act({ type: "reveal", documentId: doc.id })
+                    }
+                    pending={pending}
+                    locale={locale}
+                    t={t}
+                  />
+                ))}
+              </div>
               <div className="court-talk">
                 <h4>{t("court.talk")}</h4>
                 {view.audience.conversation.map((line, index) => (
@@ -583,13 +603,15 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   );
 }
 
-function DeskDocument({
+export function DeskDocument({
   doc,
   view,
   choice,
   onChange,
   onReveal,
   onOpen,
+  expanded,
+  onToggle,
   pending,
   locale,
   t,
@@ -600,11 +622,23 @@ function DeskDocument({
   onChange: (next: Choice) => void;
   onReveal: () => void;
   onOpen: () => void;
+  expanded: boolean;
+  onToggle: () => void;
   pending: boolean;
   locale: Locale;
   t: Translator;
 }) {
   if (!choice) return null;
+  const compact = view.energy !== undefined;
+  const unread = doc.opened === false;
+  const visible = !compact || (!unread && expanded);
+  const blocked = unread && view.energy === 0;
+  const needsReply =
+    !doc.rescript &&
+    (doc.kind === "memorial" ||
+      doc.kind === "secret_memorial" ||
+      doc.draft ||
+      doc.hasDraft);
   const dispositions = [
     ...(doc.draft || doc.hasDraft ? (["follow_draft"] as const) : []),
     "custom" as const,
@@ -621,83 +655,159 @@ function DeskDocument({
     "arrest",
   ];
   return (
-    <article className={`court-doc court-doc-${doc.kind}`}>
-      <DocumentHead doc={doc} locale={locale} t={t} />
-      <DocumentBody doc={doc} t={t} />
-      {doc.opened === false ? (
-        <button
-          className="court-link"
-          disabled={pending || view.energy === 0}
-          onClick={onOpen}
-        >
-          {t("court.openMessage")}
-        </button>
-      ) : null}
-      {doc.folded && doc.opened !== false ? (
-        <button
-          className="court-link"
-          disabled={pending || view.energy === 0}
-          onClick={onReveal}
-        >
-          {t("court.revealOriginal")}
-        </button>
-      ) : null}
-      {doc.draft && doc.opened !== false ? (
-        <div className="court-draft">
-          <span>{t("court.draft")}</span>
-          <strong>
-            {t(`court.edict.${doc.draft.edict.kind}` as MessageKey)}
-          </strong>
-          <EdictParams edict={doc.draft.edict} view={view} t={t} />
-          <p>{doc.draft.text}</p>
-        </div>
-      ) : doc.kind === "memorial" && !doc.hasDraft ? (
-        <p className="fog-note">{t("court.noDraft")}</p>
-      ) : null}
-      <div className="view-switch court-dispositions">
-        {dispositions.map((d) => (
+    <article
+      className={`court-doc court-doc-${doc.kind}${compact ? " court-inbox-item" : ""}`}
+      role={compact ? "listitem" : undefined}
+    >
+      {compact ? (
+        <div className="court-inbox-row">
           <button
-            key={d}
-            className={choice.disposition === d ? "active" : ""}
-            onClick={() =>
-              onChange({
-                ...choice,
-                disposition: d,
-                text:
-                  d === "follow_draft" ? (doc.draft?.text ?? "") : choice.text,
-              })
+            type="button"
+            className="court-inbox-toggle"
+            disabled={pending || blocked}
+            aria-expanded={visible}
+            aria-controls={`court-message-${doc.id}`}
+            onClick={() => {
+              if (pending || blocked) return;
+              onToggle();
+              if (unread) onOpen();
+            }}
+            title={
+              unread
+                ? t(blocked ? "court.noEnergy" : "court.openMessage")
+                : undefined
             }
           >
-            {t(
-              d === "follow_draft"
-                ? "court.follow"
-                : d === "custom"
-                  ? "court.custom"
-                  : "court.hold",
-            )}
+            <span className="court-inbox-source">
+              {doc.fromName} · {t(`court.kind.${doc.kind}` as MessageKey)}
+              {doc.kind === "brief"
+                ? ` · ${t("court.briefDirect")}`
+                : doc.direct
+                  ? ` · ${t("court.direct")}`
+                  : ""}
+            </span>
+            <span className="court-inbox-subject">{doc.subject}</span>
+            <span className="court-inbox-status">
+              <span className={unread ? "court-inbox-unread" : ""}>
+                {t(unread ? "court.unread" : "court.read")}
+              </span>
+              {needsReply ? (
+                <span className="court-inbox-reply">
+                  {t("court.needsReply")}
+                </span>
+              ) : null}
+              <span>
+                {unread
+                  ? t(blocked ? "court.noEnergy" : "court.openCost")
+                  : t(visible ? "court.collapse" : "court.expand")}
+              </span>
+            </span>
           </button>
-        ))}
-      </div>
-      {choice.disposition === "custom" ? (
-        <EdictEditor
-          value={choice.edict}
-          view={view}
-          kinds={customKinds}
-          onChange={(edict) => onChange({ ...choice, edict })}
-          t={t}
-        />
-      ) : null}
-      {choice.disposition === "custom" ||
-      (view.energy === undefined && choice.disposition === "follow_draft") ? (
-        <label className="court-vermilion">
-          <span>{t("court.vermilion")}</span>
-          <textarea
-            value={choice.text}
-            placeholder={t("court.vermilionPlaceholder")}
-            onChange={(e) => onChange({ ...choice, text: e.target.value })}
+          {unread && (doc.draft || doc.hasDraft) ? (
+            <select
+              className="court-inbox-disposition"
+              aria-label={`${doc.subject} · ${t("court.disposal")}`}
+              value={choice.disposition}
+              disabled={pending}
+              onChange={(e) =>
+                onChange({
+                  ...choice,
+                  disposition:
+                    e.target.value === "follow_draft" ? "follow_draft" : "hold",
+                })
+              }
+            >
+              <option value="follow_draft">{t("court.follow")}</option>
+              <option value="hold">{t("court.hold")}</option>
+            </select>
+          ) : null}
+        </div>
+      ) : (
+        <DocumentHead doc={doc} locale={locale} t={t} />
+      )}
+      <div
+        id={`court-message-${doc.id}`}
+        className={compact ? "court-inbox-body" : undefined}
+        hidden={!visible}
+      >
+        <DocumentBody doc={doc} t={t} />
+        {doc.opened === false ? (
+          <button
+            className="court-link"
+            disabled={pending || view.energy === 0}
+            onClick={onOpen}
+          >
+            {t("court.openMessage")}
+          </button>
+        ) : null}
+        {doc.folded && doc.opened !== false ? (
+          <button
+            className="court-link"
+            disabled={pending || view.energy === 0}
+            onClick={onReveal}
+          >
+            {t("court.revealOriginal")}
+          </button>
+        ) : null}
+        {doc.draft && doc.opened !== false ? (
+          <div className="court-draft">
+            <span>{t("court.draft")}</span>
+            <strong>
+              {t(`court.edict.${doc.draft.edict.kind}` as MessageKey)}
+            </strong>
+            <EdictParams edict={doc.draft.edict} view={view} t={t} />
+            <p>{doc.draft.text}</p>
+          </div>
+        ) : doc.kind === "memorial" && !doc.hasDraft ? (
+          <p className="fog-note">{t("court.noDraft")}</p>
+        ) : null}
+        <div className="view-switch court-dispositions">
+          {dispositions.map((d) => (
+            <button
+              key={d}
+              className={choice.disposition === d ? "active" : ""}
+              onClick={() =>
+                onChange({
+                  ...choice,
+                  disposition: d,
+                  text:
+                    d === "follow_draft"
+                      ? (doc.draft?.text ?? "")
+                      : choice.text,
+                })
+              }
+            >
+              {t(
+                d === "follow_draft"
+                  ? "court.follow"
+                  : d === "custom"
+                    ? "court.custom"
+                    : "court.hold",
+              )}
+            </button>
+          ))}
+        </div>
+        {choice.disposition === "custom" ? (
+          <EdictEditor
+            value={choice.edict}
+            view={view}
+            kinds={customKinds}
+            onChange={(edict) => onChange({ ...choice, edict })}
+            t={t}
           />
-        </label>
-      ) : null}
+        ) : null}
+        {choice.disposition === "custom" ||
+        (view.energy === undefined && choice.disposition === "follow_draft") ? (
+          <label className="court-vermilion">
+            <span>{t("court.vermilion")}</span>
+            <textarea
+              value={choice.text}
+              placeholder={t("court.vermilionPlaceholder")}
+              onChange={(e) => onChange({ ...choice, text: e.target.value })}
+            />
+          </label>
+        ) : null}
+      </div>
     </article>
   );
 }
