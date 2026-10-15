@@ -1,9 +1,10 @@
 // Playtest driver: the emperor follows every draft and sends the Embroidered
-// Guard to Jiande once on day 8. Saves under runs/court/ like the web app.
+// Guard to Jiande on day 8 and questions Hu on day 2. Saves under runs/court/ like the web app.
 // Usage: npx tsx apps/web/server/court-autoplay.ts [days=15]
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ids, type SpecialEdict } from "@throne/court";
 import { CourtService } from "./court-service.ts";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -17,6 +18,7 @@ const service = new CourtService(root);
 let snap = await service.create("zh-CN");
 say(`run ${snap.id} log ${log}`);
 let sent = false;
+let asked = false;
 for (let i = 0; i < 400; i += 1) {
   if (snap.status === "failed") {
     say(`failed: ${snap.error}; retrying`);
@@ -33,7 +35,7 @@ for (let i = 0; i < 400; i += 1) {
   say(
     `day ${day}: ${audience.documents.length} papers [${audience.documents.map((d) => d.subject).join(" | ")}] oral ${audience.oralReports.length} calls ${snap.calls}`,
   );
-  const specials =
+  const specials: SpecialEdict[] =
     !sent && day >= 8
       ? [
           {
@@ -45,6 +47,19 @@ for (let i = 0; i < 400; i += 1) {
         ]
       : [];
   if (specials.length) sent = true;
+  if (!asked && day >= 2) {
+    specials.push({
+      edict: {
+        kind: "request_memorial",
+        params: {
+          actorId: ids.hu,
+          question:
+            "浙江改稻为桑现议如何？新安江沿岸堤防能否抵御端午汛水？着据实具折回奏。",
+        },
+      },
+    });
+    asked = true;
+  }
   const t = Date.now();
   snap = await service.submit(snap.id, {
     audienceId: audience.id,

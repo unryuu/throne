@@ -202,7 +202,8 @@ describe("court session", () => {
     expect(state.policy.status).toBe("approved");
 
     const zhengFirst = state.decisions.find((d) => d.actorId === ids.zheng)!;
-    expect(zhengFirst.at).toBeGreaterThan(approval.arrivals[ids.zheng]!);
+    expect(zhengFirst.at).toBe(at(1, 4));
+    expect(zhengFirst.at).toBeLessThan(approval.arrivals[ids.zheng]!);
     const zhengInput = JSON.stringify(zhengFirst.input);
     expect(zhengInput).toContain("严世蕃");
     expect(zhengInput).not.toContain("先给干爹递个话");

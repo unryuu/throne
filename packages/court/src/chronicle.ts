@@ -224,6 +224,7 @@ const quietEvents = new Set([
   // Retired after the first playtests; kept so those runs still read.
   "court.audience_scheduled",
   "court.audience_skipped",
+  "court.empty_skipped",
 ]);
 
 const str = (value: JsonValue | undefined): string | undefined =>
@@ -448,7 +449,12 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
           linked !== undefined &&
           docs[linked]?.rescript?.disposition === "proxy";
         // Rescripts made at the desk already show on their paper.
-        if (linked !== undefined && !proxy) break;
+        if (
+          linked !== undefined &&
+          !proxy &&
+          (doc.edict as JsonObject | undefined)?.kind !== "request_memorial"
+        )
+          break;
         ruler.push({
           type: "edict",
           at,

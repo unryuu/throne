@@ -3,6 +3,7 @@ import type { JsonObject } from "@throne/shared-types";
 import { formatCourtTime } from "./calendar.ts";
 import { countyIds, ids } from "./jiajing.ts";
 import {
+  availableDocumentKinds,
   capabilitySpecs,
   countyFacts,
   energyAvailable,
@@ -388,7 +389,7 @@ export function buildNpcInput(
       status: actor.active ? "在任" : "已被革职拿问，不能再调动任何人和物",
       ...actor.profile,
     },
-    documentKinds: actor.active ? actor.documentKinds : ["memorial", "letter"],
+    documentKinds: availableDocumentKinds(state, actorId),
     capabilities: actor.active
       ? actor.capabilities.map((id) => ({
           id,
@@ -401,10 +402,12 @@ export function buildNpcInput(
       .map((a) => ({ id: a.id, name: a.name, office: a.office })),
     ...(actorId === ids.yanSong
       ? {
-          edictOptions: edictKinds.map((kind) => ({
-            kind,
-            description: draftEdictDescriptions[kind],
-          })),
+          edictOptions: edictKinds
+            .filter((kind) => kind !== "request_memorial")
+            .map((kind) => ({
+              kind,
+              description: draftEdictDescriptions[kind],
+            })),
         }
       : {}),
     ...(actorId === ids.lvFang
@@ -417,6 +420,21 @@ export function buildNpcInput(
     runId,
     newFromLogEntry: firstNew < 0 ? null : start + firstNew + 1,
     resources,
+    imperialQuestions: Object.values(state.documents)
+      .filter(
+        (d) =>
+          d.edict?.kind === "request_memorial" &&
+          d.edict.params.actorId === actorId &&
+          d.deliveredTo.includes(actorId),
+      )
+      .map((d) => ({
+        documentId: d.id,
+        receivedAt: formatCourtTime(d.arrivals[actorId]!, language),
+        question: d.edict!.params.question!,
+        instruction:
+          "皇上亲问，正候你具折回奏。是否回奏、何时回奏、如何措辞由你决定；本次亲问允许你具折（即使日常职责不写奏疏），可用明折（memorial，先经内阁票拟）或密折（secret_memorial，直达司礼监）。若已回奏，请结合自己的发文记录判断，不必重复。",
+        ...paper(`doc:${d.id}`, d.text),
+      })),
     ...(actor.active
       ? {
           energy: {

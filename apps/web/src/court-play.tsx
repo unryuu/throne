@@ -59,6 +59,8 @@ type Special = EdictDraft & { text: string };
 
 function defaultParams(kind: EdictKind, view: CourtRulerView): JsonObject {
   switch (kind) {
+    case "request_memorial":
+      return { actorId: view.options.questionable[0]?.id ?? "", question: "" };
     case "order_inquiry":
       return { countyId: view.options.counties[0]!.id, agent: "jinyiwei" };
     case "reprimand":
@@ -158,7 +160,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
       setVerified(false);
       remember(next.id);
     });
-  const submit = () =>
+  const submit = (skipEmptyAudiences = false) =>
     perform(async () => {
       if (!snapshot?.view.audience) return;
       const view = snapshot.view;
@@ -186,7 +188,8 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           text: s.text,
         })),
         standing,
-        seclusionDays: seclusion,
+        seclusionDays: skipEmptyAudiences ? 1 : seclusion,
+        skipEmptyAudiences,
       };
       setSnapshot({ ...snapshot, status: "running" });
       setSnapshot(
@@ -387,6 +390,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                           : (["approve_policy"] as const)),
                         "order_relief",
                         "order_inquiry",
+                        "request_memorial",
                         "reprimand",
                         "arrest",
                       ]}
@@ -483,6 +487,13 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                   ? t("court.closeSeclude", { count: seclusion })
                   : t("court.close")}
               </button>
+              <button
+                className="court-link"
+                disabled={pending}
+                onClick={() => void submit(true)}
+              >
+                {t("court.skipEmpty")}
+              </button>
             </section>
           ) : null}
           {snapshot.status === "complete" ? (
@@ -577,6 +588,7 @@ function DeskDocument({
     ...(view.options.policyDecided ? [] : (["approve_policy"] as const)),
     "order_relief",
     "order_inquiry",
+    "request_memorial",
     "reprimand",
     "arrest",
   ];
@@ -761,16 +773,30 @@ function EdictEditor({
           </select>
         </label>
       ) : null}
-      {value.kind === "reprimand" || value.kind === "arrest" ? (
+      {value.kind === "request_memorial" ? (
+        <label>
+          <span>{t("court.question")}</span>
+          <textarea
+            maxLength={600}
+            value={String(p.question ?? "")}
+            onChange={(e) => set("question", e.target.value)}
+          />
+        </label>
+      ) : null}
+      {value.kind === "request_memorial" ||
+      value.kind === "reprimand" ||
+      value.kind === "arrest" ? (
         <label>
           <span>{t("court.target")}</span>
           <select
             value={String(p.actorId ?? "")}
             onChange={(e) => set("actorId", e.target.value)}
           >
-            {(value.kind === "arrest"
-              ? view.options.arrestable
-              : view.options.reprimandable
+            {(value.kind === "request_memorial"
+              ? view.options.questionable
+              : value.kind === "arrest"
+                ? view.options.arrestable
+                : view.options.reprimandable
             ).map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
@@ -799,10 +825,12 @@ function EdictParams({
   if (county) parts.push(county.name);
   if (edict.params.agent === "hu" || edict.params.agent === "jinyiwei")
     parts.push(t(`court.agent.${edict.params.agent}`));
-  const target = view.options.reprimandable.find(
+  const target = view.options.questionable.find(
     (a) => a.id === edict.params.actorId,
   );
   if (target) parts.push(target.name);
+  if (typeof edict.params.question === "string")
+    parts.push(edict.params.question);
   return parts.length ? <em> · {parts.join(" · ")}</em> : null;
 }
 

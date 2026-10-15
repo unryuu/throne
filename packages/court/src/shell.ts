@@ -43,6 +43,7 @@ export const shellLimits = { documents: 3, actions: 3, commands: 30 };
 
 /** Desk papers for the actors with a duty, shown under desk/. */
 const deskFiles: Readonly<Record<string, string>> = {
+  imperialQuestions: "皇帝垂询",
   memorialsAwaitingYourDraft: "待票拟",
   inbox: "待处置",
   held: "留中",
@@ -219,7 +220,7 @@ export function shellHelp(input: JsonObject = {}): string {
     "  abilities.txt   你能发的文书和能办的事",
     "  resources.txt   你手里的钱粮",
     "  policy.txt      你所知的朝廷旨意",
-    ...(role.length ? ["  desk/           你案头待办的本章"] : []),
+    "  desk/           案头文书；皇帝垂询.txt 是皇上亲问、候你回奏的问题",
     "",
     "查阅：ls cat head tail grep wc sed -n find sort echo，可用管道、&&、for 循环、$(...)。草稿可以写在 /tmp/ 下，其余文件只读。",
     "",

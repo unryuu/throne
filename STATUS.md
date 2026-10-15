@@ -22,4 +22,10 @@ Terminal actors (2026-10-06): every LLM actor's regular decision is now a day in
 
 Spectator milestone (2026-10-06): a static spectator page (`apps/spectator`) steps through saved runs day by day, switching between what the emperor saw and what happened, with an ending card. It ships the first playtest (the Jiande breach) and the 15-day terminal run, with hand-picked scenes whose quotes a test checks against the actors' own words. The README now leads with the story. A GitHub Pages workflow publishes the page from `main`. See [FEAT-0010](docs/issues/active/playability.md).
 
+Local spectating and storyteller (2026-10-15): the spectator dev server lists local saves; a finished run gets one DeepSeek "storyteller" call that picks scenes and writes the ending card, aiming for fun over verbatim accuracy (unmatched quotes show as retellings). Side-by-side with hand-picked versions: `runs/storyteller/对照.md` (local only). The spectator page is live on GitHub Pages and now also carries the full terminal-mode reign ("一本真账", on the branch, not yet on `main`).
+
+Imperial questions and opening (2026-10-15): the emperor can ask any live minister a question that travels like other papers and opens memorial/secret-memorial replies; all ministers act from day 0; the web desk can skip to the next day with something on it. Rules: [ADR 0009](docs/architecture/0009-imperial-questions.md). A 10-day playtest showed the ask-and-answer loop works but takes about two weeks for Hu Zongxian (Taizhou is 7 days away).
+
+Under discussion: a richer imperial information flow (regular briefs from Yan Song and Lü Fang, engine-generated reports with leaked clues, Lu Bing's daily rumours, an attention budget for the emperor). DeepSeek is cheap; cost should not drive these designs.
+
 Next: see [HANDOFF.md](HANDOFF.md).

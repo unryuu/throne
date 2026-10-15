@@ -50,6 +50,7 @@ export type EdictKind =
   | "reject"
   | "approve_policy"
   | "order_relief"
+  | "request_memorial"
   | "order_inquiry"
   | "reprimand"
   | "arrest";
@@ -202,6 +203,7 @@ export type CourtState = {
   readonly seed: string;
   readonly audience?: Audience;
   readonly audienceCount: number;
+  readonly skipEmptyAudiences?: boolean;
   readonly nextAudienceAt?: SimTime;
   readonly lastAudienceAt?: SimTime;
   readonly secludedUntil?: SimTime;

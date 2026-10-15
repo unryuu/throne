@@ -79,6 +79,7 @@ export type CourtRulerView = {
     readonly arrestable: readonly { id: string; name: string }[];
     readonly reprimandable: readonly { id: string; name: string }[];
     readonly policyDecided: boolean;
+    readonly questionable: readonly { id: string; name: string }[];
   };
   /** Out-of-world: regular decisions the cost guard has stopped. */
   readonly cappedWakes: number;
@@ -195,6 +196,9 @@ export function courtRulerView(
       counties: countyIds.map((id) => ({ id, name: state.counties[id].name })),
       arrestable: named(arrestableIds),
       reprimandable: named(reprimandableIds),
+      questionable: Object.values(state.actors)
+        .filter((a) => a.llm && a.active)
+        .map((a) => ({ id: a.id, name: a.name })),
       policyDecided: state.policy.status !== "proposed",
     },
     cappedWakes: state.counters.cappedWakes ?? 0,
@@ -215,6 +219,8 @@ export function submissionProblem(
       : "There is no interruption to decline";
   if (audience.interruption && !audience.interruption.admitted)
     return "Admit or decline the interruption first";
+  if (submission.skipEmptyAudiences && (submission.seclusionDays ?? 1) > 1)
+    return "Skipping empty days cannot be combined with seclusion";
   let policy = state.policy;
   const check = (edict: Edict | undefined, replyTo?: string) => {
     if (!edict) return "Missing edict";
@@ -317,6 +323,7 @@ const submissionSchema = z.object({
     .optional(),
   seclusionDays: z.number().int().min(1).max(maxSeclusionDays).optional(),
   decline: z.boolean().optional(),
+  skipEmptyAudiences: z.boolean().optional(),
 });
 
 export function parseSubmission(value: unknown): RescriptSubmission {

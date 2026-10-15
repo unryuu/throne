@@ -85,6 +85,7 @@ export async function startCourtSession(options: {
   } else {
     kernel = new SimulationKernel(initial, domain, store, options.runId);
     for (const [eventType, scheduledAt] of [
+      ["court.begin", initial.nextAudienceAt!],
       ["court.audience_open", initial.nextAudienceAt!],
       ["world.flood", initial.flood.at],
       ["world.check", firstWorldCheckAt],

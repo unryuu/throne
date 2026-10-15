@@ -6,6 +6,7 @@ import type {
   CourtState,
   Edict,
   EdictKind,
+  DocumentKind,
 } from "./types.ts";
 
 export type CapabilitySpec = {
@@ -82,11 +83,14 @@ export const edictKinds: readonly EdictKind[] = [
   "approve_policy",
   "order_relief",
   "order_inquiry",
+  "request_memorial",
   "reprimand",
   "arrest",
 ];
 
 export const edictDescriptions: Readonly<Record<EdictKind, string>> = {
+  request_memorial:
+    '具奏垂询：皇帝亲问某人，着其具折回奏。{"actorId":人物 id,"question":"问题"}。',
   acknowledge: "知道了：只作批复，不另行交办。",
   reject: "驳回所请。若驳回改稻为桑的题本，此策作罢。",
   approve_policy: "准行改稻为桑（仅限尚未定议时）。旨意发往浙江。",
@@ -147,6 +151,18 @@ export function edictProblem(
       if (p.agent === "hu" && !state.actors[ids.hu]?.active)
         return "Hu Zongxian is not in office";
       return undefined;
+    case "request_memorial":
+      if (
+        typeof p.actorId !== "string" ||
+        !state.actors[p.actorId]?.llm ||
+        !state.actors[p.actorId]?.active
+      )
+        return "invalid or inactive target";
+      return typeof p.question === "string" &&
+        p.question.trim().length > 0 &&
+        p.question.length <= 600
+        ? undefined
+        : "question must contain 1 to 600 characters";
     case "reprimand":
     case "arrest": {
       const allowed: readonly string[] =
@@ -167,6 +183,7 @@ export function draftProblem(
   state: CourtState,
   edict: Edict,
 ): string | undefined {
+  if (edict.kind === "request_memorial") return "具奏垂询须由皇帝亲发";
   if (edict.kind === "order_inquiry" && edict.params.agent === "jinyiwei")
     return "锦衣卫只听皇帝亲命，票拟派不动";
   return edictProblem(state, edict);
@@ -287,4 +304,28 @@ export function countyFacts(state: CourtState, countyId: CountyId): JsonObject {
     dikeBreached: c.breach !== undefined,
     unit: "田亩与灾民单位为万，死亡为人数，粮为万石，民怨0-1；inundatedMu 为汛时受淹面积，floodedMu 为仍在百姓手里的淹田",
   };
+}
+
+/** A personal imperial question opens both written reply channels for its recipient. */
+export function availableDocumentKinds(
+  state: CourtState,
+  actorId: string,
+): readonly DocumentKind[] {
+  const actor = state.actors[actorId]!;
+  if (!actor.active) return ["memorial", "letter"];
+  const asked = Object.values(state.documents).some(
+    (d) =>
+      d.edict?.kind === "request_memorial" &&
+      d.edict.params.actorId === actorId &&
+      d.deliveredTo.includes(actorId),
+  );
+  return asked
+    ? [
+        ...new Set<DocumentKind>([
+          ...actor.documentKinds,
+          "memorial",
+          "secret_memorial",
+        ]),
+      ]
+    : actor.documentKinds;
 }

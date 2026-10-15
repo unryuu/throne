@@ -1,0 +1,68 @@
+{
+  "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185",
+  "records": [
+    {
+      "kind": "scheduled",
+      "event": {
+        "eventType": "court.audience_open",
+        "scheduledAt": 6,
+        "payload": {},
+        "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000000",
+        "createdAt": 0
+      }
+    },
+    {
+      "kind": "scheduled",
+      "event": {
+        "eventType": "world.flood",
+        "scheduledAt": 410,
+        "payload": {},
+        "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000001",
+        "createdAt": 0
+      }
+    },
+    {
+      "kind": "scheduled",
+      "event": {
+        "eventType": "world.check",
+        "scheduledAt": 63,
+        "payload": {},
+        "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000002",
+        "createdAt": 0
+      }
+    },
+    {
+      "kind": "scheduled",
+      "event": {
+        "eventType": "world.end",
+        "scheduledAt": 911,
+        "payload": {},
+        "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000003",
+        "createdAt": 0
+      }
+    },
+    {
+      "kind": "consumed",
+      "eventId": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000000",
+      "consumedAt": 6
+    },
+    {
+      "kind": "committed",
+      "event": {
+        "eventType": "court.audience_opened",
+        "payload": {
+          "audience": {
+            "id": "audience-1",
+            "openedAt": 6,
+            "conversation": [],
+            "documentIds": ["doc-policy", "doc-army-pay"],
+            "oralReportIds": []
+          }
+        },
+        "causalEventId": "d9f36214-9eba-4b1f-b7a4-de04111fb185:scheduled:00000000",
+        "id": "d9f36214-9eba-4b1f-b7a4-de04111fb185:domain:00000004",
+        "occurredAt": 6
+      }
+    }
+  ]
+}

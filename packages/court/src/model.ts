@@ -36,6 +36,7 @@ import {
   type CourtModel,
 } from "./npc.ts";
 import {
+  availableDocumentKinds,
   actionProblem,
   capabilitySpecs,
   clamp01,
@@ -79,6 +80,7 @@ export type RescriptSubmission = {
   readonly standing?: CourtState["standing"];
   /** Days until the next decision point; above one is a seclusion. */
   readonly seclusionDays?: number;
+  readonly skipEmptyAudiences?: boolean;
   /** Refuse an interruption of a seclusion without opening the desk. */
   readonly decline?: boolean;
 };
@@ -253,6 +255,8 @@ function governorId(state: CourtState): string {
 function defaultEdictText(edict: Edict, language: string): string {
   const en = language === "en";
   switch (edict.kind) {
+    case "request_memorial":
+      return `朕问：${String(edict.params.question)} 着具折回奏。`;
     case "acknowledge":
       return en ? "Noted." : "知道了。";
     case "reject":
@@ -284,7 +288,7 @@ function edictRecipients(
   const add = (id: string | undefined) => {
     if (id && state.actors[id]?.llm && !out.includes(id)) out.push(id);
   };
-  add(authorId);
+  if (edict.kind !== "request_memorial") add(authorId);
   switch (edict.kind) {
     case "approve_policy":
       zhejiang.forEach(add);
@@ -296,6 +300,7 @@ function edictRecipients(
     case "order_inquiry":
       add(edict.params.agent === "hu" ? ids.hu : ids.luBing);
       break;
+    case "request_memorial":
     case "reprimand":
       add(edict.params.actorId as string);
       break;
@@ -337,12 +342,18 @@ function issueEdict(
     kind: "edict",
     fromId: ids.ruler,
     toIds,
-    subject: reply
-      ? `${options.language === "en" ? "Rescript" : "朱批"}：${reply.subject}`
-      : options.language === "en"
-        ? "Imperial edict"
-        : "上谕",
-    text: text.trim() || defaultEdictText(edict, options.language),
+    subject:
+      edict.kind === "request_memorial"
+        ? `垂询${ctx.state.actors[String(edict.params.actorId)]!.name}：${String(edict.params.question)}`
+        : reply
+          ? `${options.language === "en" ? "Rescript" : "朱批"}：${reply.subject}`
+          : options.language === "en"
+            ? "Imperial edict"
+            : "上谕",
+    text:
+      edict.kind === "request_memorial"
+        ? `${defaultEdictText(edict, options.language)}${text.trim() ? `\n${text.trim()}` : ""}`
+        : text.trim() || defaultEdictText(edict, options.language),
     edict,
     ...(reply ? { replyToId: reply.id } : {}),
   });
@@ -436,6 +447,8 @@ function handleRescript(
     });
   }
   const span = submission.seclusionDays ?? 1;
+  if (submission.skipEmptyAudiences && span > 1)
+    throw new Error("Skipping empty days cannot be combined with seclusion");
   if (!Number.isInteger(span) || span < 1 || span > maxSeclusionDays)
     throw new Error("Seclusion must last 1 to 30 days");
   const next = ctx.time + days(span);
@@ -444,6 +457,7 @@ function handleRescript(
     rescripts: j(rescripts),
     ...(next <= ctx.state.endsAt ? { nextAudienceAt: next } : {}),
     ...(span > 1 ? { secludedUntil: next } : {}),
+    ...(submission.skipEmptyAudiences ? { skipEmptyAudiences: true } : {}),
   });
   if (next <= ctx.state.endsAt) ctx.later("court.audience_open", next, {});
   for (const { doc, edict, text } of pending) {
@@ -531,6 +545,17 @@ function openAudience(ctx: Context): void {
     return;
   }
   const contents = deskContents(state);
+  if (
+    state.skipEmptyAudiences &&
+    !interruption &&
+    !contents.documentIds.length &&
+    !contents.oralReportIds.length
+  ) {
+    const next = ctx.time + days(1);
+    ctx.commit("court.empty_skipped", { nextAudienceAt: next });
+    if (next <= state.endsAt) ctx.later("court.audience_open", next, {});
+    return;
+  }
   ctx.commit("court.audience_opened", {
     audience: j({ ...base, ...contents }),
   });
@@ -1056,7 +1081,7 @@ function applyDecision(
     CourtDocument,
     "arrivals" | "deliveredTo" | "sentAt"
   >[] = [];
-  const allowedKinds = final ? ["memorial", "letter"] : actor.documentKinds;
+  const allowedKinds = availableDocumentKinds(ctx.state, actorId);
   const findActor = (to: string | undefined) =>
     Object.values(ctx.state.actors).find(
       (a) => a.id === to || (to !== undefined && a.name === to),
@@ -1374,6 +1399,10 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
         const p = event.payload;
         if (ctx.state.phase === "complete") break;
         switch (event.eventType) {
+          case "court.begin":
+            for (const actor of Object.values(ctx.state.actors))
+              if (actor.llm && actor.active) wake(ctx, actor.id);
+            break;
           case "court.audience_open":
             openAudience(ctx);
             break;
@@ -1539,9 +1568,12 @@ export function reduceCourtState(
   const p = event.payload;
   const time = event.occurredAt;
   switch (event.eventType) {
+    case "court.empty_skipped":
+      return { ...state, nextAudienceAt: simTime(Number(p.nextAudienceAt)) };
     case "court.audience_opened": {
       const audience = p.audience as unknown as CourtState["audience"] & {};
       let next: CourtState = { ...state, phase: "audience", audience };
+      delete (next as { skipEmptyAudiences?: boolean }).skipEmptyAudiences;
       delete (next as { nextAudienceAt?: SimTime }).nextAudienceAt;
       delete (next as { pendingInterruption?: unknown }).pendingInterruption;
       return attachToDesk(
@@ -1646,6 +1678,9 @@ export function reduceCourtState(
       };
       delete (next as { audience?: unknown }).audience;
       delete (next as { secludedUntil?: SimTime }).secludedUntil;
+      delete (next as { skipEmptyAudiences?: boolean }).skipEmptyAudiences;
+      if (p.skipEmptyAudiences === true)
+        next = { ...next, skipEmptyAudiences: true };
       if (p.nextAudienceAt !== undefined)
         next = { ...next, nextAudienceAt: simTime(Number(p.nextAudienceAt)) };
       if (p.secludedUntil !== undefined)
