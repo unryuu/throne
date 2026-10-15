@@ -7,5 +7,5 @@ coverage/
 !.env.example
 *.log
 .dsh/
-runs/
+/runs/
 secret/
