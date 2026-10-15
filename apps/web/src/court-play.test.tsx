@@ -222,3 +222,37 @@ describe("compact imperial desk", () => {
     expect(legacy).toContain(p.t("court.vermilion"));
   });
 });
+
+it("new reigns allow free reading at zero energy and keep glosses and ponder results inside the expanded body", () => {
+  const p = {
+    ...props(),
+    view: {
+      ...view,
+      settings: { register: "modern" as const, summaries: true },
+      energy: 0,
+    },
+    onPonder: vi.fn(),
+  };
+  expect(rowButton(DeskDocument(p)).disabled).toBe(false);
+  rowButton(DeskDocument(p)).onClick();
+  expect(p.onOpen).toHaveBeenCalledOnce();
+  const html = renderToStaticMarkup(
+    <DeskDocument
+      {...p}
+      expanded
+      doc={{
+        ...doc,
+        opened: true,
+        text: "奏疏正文",
+        gloss: "想找皇帝要钱",
+        ponders: [{ at: at(0, 6), text: "朕得查查旧账" }],
+      }}
+    />,
+  );
+  expect(html).toContain("（想找皇帝要钱）");
+  expect(html).toContain("朕得查查旧账");
+  expect(html).toContain("深思 ·1");
+  expect(html.indexOf("court-inbox-body")).toBeLessThan(
+    html.indexOf("（想找皇帝要钱）"),
+  );
+});

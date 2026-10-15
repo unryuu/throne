@@ -9,6 +9,11 @@ const quietModel =
   (onCall: () => void = () => {}): CourtModel =>
   async (request) => {
     onCall();
+    if (request.summaries)
+      return JSON.stringify({
+        summaries: (request.input.texts as string[]).map(() => "想让皇帝做主"),
+      });
+    if (request.ponder) return "朕得想想。";
     if (request.bureau)
       return JSON.stringify({
         reports: (request.input.facts as unknown as IntelligenceFact[]).map(
@@ -103,7 +108,7 @@ describe("court service", () => {
     const root = await mkdtemp(join(tmpdir(), "throne-court-test-"));
     let fail = true;
     const service = new CourtService(root, () => async (request) => {
-      if (fail && !request.bureau) {
+      if (fail && !request.bureau && !request.summaries) {
         fail = false;
         throw new Error("provider unavailable");
       }

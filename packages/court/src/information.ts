@@ -4,7 +4,8 @@ import { countyIds, ids } from "./jiajing.ts";
 import type { CourtState, IntelligenceFact } from "./types.ts";
 
 export const imperialRules = {
-  perDay: 3,
+  perDay: 2,
+  legacyPerDay: 3,
   minMessages: 5,
   maxMessages: 10,
   decisionBudget: 1000,
@@ -15,14 +16,17 @@ export const briefAuthors: readonly string[] = [
   ids.luBing,
 ];
 export const briefInstruction =
-  "你可用 send brief --subject 标题 --text 正文，直送御前、不经司礼监、不花精力，每日限一条。标题≤20字、正文≤150字。皇帝每天先只看标题，只能细看两三条；标题就是你说话的分量。条子里写什么、瞒什么、编什么，都是你自己的选择。";
+  "你可用 send brief --subject 标题 --text 正文，直送御前、不经司礼监、不花精力，每日限一条。标题≤20字、正文≤150字。皇帝每天先只看标题，未必会细看每一条；标题就是你说话的分量。条子里写什么、瞒什么、编什么，都是你自己的选择。";
 export const rumorInstruction =
   "desk/风闻.txt 是未经核实的风闻，你也不知道真假。可用条子报皇帝、写信转告、暂留或压下；与必须转呈的正式原报不同。引用时在 send 加 --rumors 编号,编号，便于自己追溯；不必照抄说法。";
+
+export const imperialCapacity = (state: CourtState): number =>
+  state.settings ? imperialRules.perDay : imperialRules.legacyPerDay;
 
 export function imperialEnergy(state: CourtState, time: number): number {
   const info = state.information;
   return !info || info.day !== dayOf(time)
-    ? imperialRules.perDay
+    ? imperialCapacity(state)
     : info.remaining;
 }
 
@@ -150,7 +154,7 @@ export function generateFacts(
 
 /** The clerk writes freely around each fact's gist; see ADR 0010. */
 export const bureauPrompt =
-  '你是通政司的书吏，每天把各处递来的消息整理成给皇帝的短报。每条事实写一份：标题（不超过20字，像真实的公文事由，让人一眼想点开或一眼略过）；正文（不超过120字，半文半白的公文口吻，可以补上地名、衙门、经手人、天气这类细节，让它像真的）。事实的要点不能改：有的不能写成没有，数目照写（用中文数字），模糊的保持模糊，传闻照样当作所闻上报。“朝政杂事”由你自拟一件与浙江无关的琐事，什么都行，越像真的越好。季节、天气要合 date 所示的日子。不要出现百分比、小数或阿拉伯数字。仅输出 JSON：{"reports":[{"id":"事实编号","title":"标题","text":"正文"}]}';
+  '你是通政司的书吏，每天把各处递来的消息整理成给皇帝的短报。每条事实写一份：标题（不超过20字，像真实的公文事由，让人一眼想点开或一眼略过）；正文（不超过120字，公文口吻，可以补上地名、衙门、经手人、天气这类细节，让它像真的）。事实的要点不能改：有的不能写成没有，数目照写（用中文数字），模糊的保持模糊，传闻照样当作所闻上报。“朝政杂事”由你自拟一件与浙江无关的琐事，什么都行，越像真的越好。季节、天气要合 date 所示的日子。不要出现百分比、小数或阿拉伯数字。仅输出 JSON：{"reports":[{"id":"事实编号","title":"标题","text":"正文"}]}';
 
 const report = z
   .object({
@@ -190,3 +194,18 @@ export function parseBureau(text: string, facts: readonly IntelligenceFact[]) {
     };
   });
 }
+
+export const summaryPrompt =
+  '你是游戏外的中立旁观者，只看正文。每条用一句口语现代汉语说穿“这人到底想干嘛”，不复述经过，最好二十字以内，可以带点幽默，比如礼部替宗室请封 →“远房宗室找你要钱”，报祥瑞 →“有人想拍你马屁”。按输入顺序输出 JSON：{"summaries":["一句话"]}。';
+export const ponderPrompt =
+  "你是嘉靖，围绕当前这条 document，用第一人称现代汉语写一段约150–300字的内心独白，其余材料只作背景：这是谁要什么，按规矩怎么办，批了会不会成惯例、有何隐患，背后的制度根子；此人此衙门近来可疑否，要不要敲打或派人查。你多疑、精明、好面子、爱修玄，想错也无妨。只凭眼前所见和一般明史常识，别当自己全知。不要列点，像在心里嘀咕。只输出独白正文。";
+export function parseSummaries(text: string, count: number): readonly string[] {
+  const first = text.indexOf("{");
+  return z
+    .object({
+      summaries: z.array(z.string().trim().min(1).max(160)).length(count),
+    })
+    .parse(JSON.parse(text.slice(first, text.lastIndexOf("}") + 1))).summaries;
+}
+export const parsePonder = (text: string): string =>
+  z.string().trim().min(1).max(1200).parse(text);

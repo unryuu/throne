@@ -1889,3 +1889,40 @@ article p {
     overflow-x: auto;
   }
 }
+
+.court-settings {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #525044;
+  line-height: 2;
+}
+.court-settings select {
+  max-width: 100%;
+}
+.court-glossary {
+  margin: 14px 0;
+  line-height: 1.9;
+}
+.court-glossary summary {
+  cursor: pointer;
+}
+.court-ponder-button {
+  flex-shrink: 0;
+  margin: 0 10px;
+  padding: 7px;
+  border: 1px solid #6e5939;
+  background: #1d1e17;
+  color: #d9c39a;
+  cursor: pointer;
+}
+.court-ponder-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.court-ponder {
+  margin: 16px 0;
+  padding: 12px 18px;
+  border-left: 2px solid #a67e43;
+  background: #25261e;
+  line-height: 1.9;
+}

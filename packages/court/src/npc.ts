@@ -1,3 +1,4 @@
+import { registerInstruction } from "./preferences.ts";
 import {
   briefAuthors,
   briefInstruction,
@@ -28,6 +29,8 @@ export type CourtModelRequest = {
   /** Lü Fang answering the emperor face to face; it needs a prompt reply, not a day. */
   readonly converse?: boolean;
   readonly bureau?: boolean;
+  readonly summaries?: boolean;
+  readonly ponder?: boolean;
   /** Throws when a well-formed reply still fails this decision's obligations. */
   readonly check?: (decision: CourtDecision) => void;
 };
@@ -392,6 +395,9 @@ export function buildNpcInput(
   };
   return {
     actorId,
+    register: state.settings?.register ?? "classical",
+    writingStyle: registerInstruction(state.settings?.register),
+    freeReading: Boolean(state.settings),
     ...(state.information && briefAuthors.includes(actorId)
       ? {
           briefInstruction,
@@ -580,7 +586,7 @@ export function systemPrompt(
     "- inner：你此刻真实的想法，第一人称，不超过150字。只有你自己知道。",
     "- documents：你要发出的文书。memorial 是奏疏，经内阁票拟、司礼监转呈皇帝；secret_memorial 是密奏，不经内阁，由司礼监转呈；letter 是私信，须用 to 写明收信人 id（可以是 id 数组），只能写给 contacts 里的人。你只能用 documentKinds 里列出的文书种类。皇帝只看得到送到御前的文书，看不到你的内心和私信。",
     "- actions：你实际要去做的事，只能从 capabilities 中选，parameters 须符合说明。可以什么都不做。",
-    "写信、上奏、办事都花精力，见 energy；超出的会被退回。一次最多发三份文书、办三件事。文书用半文半白的明代公文口吻，每份不超过200字。行动的结果要等世界给出，不要声称事情已经办成。",
+    "写信、上奏、办事都花精力，见 energy；超出的会被退回。一次最多发三份文书、办三件事。每份文书不超过200字。行动的结果要等世界给出，不要声称事情已经办成。",
   ];
   if (state.information && briefAuthors.includes(actorId))
     lines.push(briefInstruction);
@@ -617,7 +623,7 @@ export function systemPrompt(
   lines.push(
     english
       ? "Write inner, subject and text in English, keeping JSON keys unchanged."
-      : "用中文书写。",
+      : registerInstruction(state.settings?.register),
     '仅返回一个 JSON 对象：{"inner":string,"documents":[{"kind":string,"to":string,"subject":string,"text":string}],"actions":[{"capabilityId":string,"parameters":{},"description":string}]' +
       extra +
       "}",

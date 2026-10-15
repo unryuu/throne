@@ -1,4 +1,4 @@
-import { imperialEnergy } from "./information.ts";
+import { imperialEnergy, imperialCapacity } from "./information.ts";
 import { z } from "zod";
 import type { SimTime } from "@throne/shared-types";
 import {
@@ -23,6 +23,8 @@ import type {
 import type { AudienceAction, RescriptSubmission } from "./model.ts";
 
 export type RulerDocumentView = {
+  readonly gloss?: string;
+  readonly ponders?: CourtDocument["ponders"];
   readonly id: string;
   readonly kind: CourtDocument["kind"];
   readonly fromId: string;
@@ -57,6 +59,9 @@ export type RulerEdictView = {
 export type CourtRulerView = {
   readonly time: SimTime;
   readonly energy?: number;
+  readonly energyCapacity?: number;
+  readonly settings?: CourtState["settings"];
+  readonly conversations?: CourtState["rulerConversations"];
   readonly phase: CourtState["phase"];
   readonly audience?: {
     readonly id: string;
@@ -106,6 +111,8 @@ function documentView(
     subject: doc.subject,
     text: !opened || folded ? "" : doc.text,
     ...(state.information ? { opened } : {}),
+    ...(opened && doc.gloss !== undefined ? { gloss: doc.gloss } : {}),
+    ...(opened && doc.ponders ? { ponders: doc.ponders } : {}),
     arrivedAt: doc.readyForRulerAt!,
     folded,
     direct: doc.route?.channel === "direct",
@@ -152,7 +159,18 @@ export function courtRulerView(
   const audience = state.audience;
   return structuredClone({
     time,
-    ...(state.information ? { energy: imperialEnergy(state, time) } : {}),
+    ...(state.information
+      ? {
+          energy: imperialEnergy(state, time),
+          energyCapacity: imperialCapacity(state),
+        }
+      : {}),
+    ...(state.settings
+      ? {
+          settings: state.settings,
+          conversations: state.rulerConversations ?? [],
+        }
+      : {}),
     phase: state.phase,
     ...(audience
       ? {
@@ -294,8 +312,9 @@ export function audienceActionProblem(
   if (
     state.information &&
     ((action.type === "converse" && !audience.conversation.length) ||
-      action.type === "reveal" ||
-      action.type === "open_message") &&
+      action.type === "ponder" ||
+      (!state.settings &&
+        (action.type === "reveal" || action.type === "open_message"))) &&
     imperialEnergy(state, audience.openedAt) < 1
   )
     return "皇帝今日精力不足";
@@ -309,6 +328,14 @@ export function audienceActionProblem(
         conversationRounds
         ? "No more rounds of conversation today"
         : undefined;
+    case "ponder": {
+      const doc = state.documents[action.documentId];
+      return state.settings &&
+        doc?.onDeskAt !== undefined &&
+        doc.openedAt !== undefined
+        ? undefined
+        : "请先展开这条消息；旧局不支持深思";
+    }
     case "open_message": {
       const doc = state.documents[action.documentId];
       return state.information &&
@@ -336,6 +363,7 @@ const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("converse"),
     message: z.string().min(1).max(400),
   }),
+  z.object({ type: z.literal("ponder"), documentId: z.string() }),
   z.object({ type: z.literal("open_message"), documentId: z.string() }),
   z.object({ type: z.literal("reveal"), documentId: z.string() }),
   z.object({ type: z.literal("admit") }),

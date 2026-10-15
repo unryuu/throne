@@ -67,6 +67,12 @@ export type RulerEntry =
       /** Endorsed by the Directorate in the emperor's name. */
       readonly proxy: boolean;
     }
+  | {
+      readonly type: "ponder";
+      readonly at: number;
+      readonly subject: string;
+      readonly text: string;
+    }
   | { readonly type: "standing"; readonly at: number; readonly text: string }
   | {
       readonly type: "interruption";
@@ -84,6 +90,7 @@ export type ChroniclePaper = {
   readonly text: string;
   /** Lü Fang's summary when he folded the original away. */
   readonly summary?: string;
+  readonly gloss?: string;
   readonly revealed: boolean;
   readonly opened?: boolean;
   readonly draft?: string;
@@ -224,6 +231,10 @@ const quietEvents = new Set([
   "court.oral_report",
   "court.desk_added",
   "information.enabled",
+  "information.summarized",
+  "information.summaries_pending",
+  "information.summaries_ready",
+  "document.restyled",
   "information.admission_preparing",
   "information.admission_ready",
   "information.spent",
@@ -366,6 +377,7 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
       text:
         opened && (!state.information || !folded || revealed) ? doc.text : "",
       ...(state.information ? { opened } : {}),
+      ...(opened && doc.gloss ? { gloss: doc.gloss } : {}),
       ...(opened && folded && doc.directorate?.text
         ? { summary: doc.directorate.text }
         : {}),
@@ -450,6 +462,14 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
           at,
           by: name(String(p.byId)),
           reason: String(p.reason),
+        });
+        break;
+      case "court.pondered":
+        ruler.push({
+          type: "ponder",
+          at,
+          subject: docs[String(p.documentId)]?.subject ?? String(p.documentId),
+          text: String(p.text),
         });
         break;
       case "court.conversed":

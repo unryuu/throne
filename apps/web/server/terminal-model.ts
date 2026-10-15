@@ -29,7 +29,13 @@ export function createTerminalCourtModel(
 ): CourtModel {
   const reply = createLiveTextModel(root, onTrace);
   return async (request) => {
-    if (request.converse || request.bureau) return reply(request);
+    if (
+      request.converse ||
+      request.bureau ||
+      request.summaries ||
+      request.ponder
+    )
+      return reply(request);
     const began = Date.now();
     const base = {
       decisionEpisodeId: request.decisionEpisodeId,

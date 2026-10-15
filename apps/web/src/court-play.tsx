@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Locale, MessageKey, Translator } from "@throne/localization";
 import {
   formatCourtTime,
-  imperialRules,
+  type CourtSettings,
   ids,
   type AudienceAction,
   type CourtAction,
@@ -84,6 +84,10 @@ function initialChoice(d: RulerDocumentView): Choice {
 }
 
 export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
+  const [settings, setSettings] = useState<CourtSettings>({
+    register: "classical",
+    summaries: true,
+  });
   const [snapshot, setSnapshot] = useState<CourtSnapshot>();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -173,7 +177,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   };
   const start = () =>
     perform(async () => {
-      const next = await request<CourtSnapshot>("", { locale });
+      const next = await request<CourtSnapshot>("", { locale, settings });
       setSnapshot(next);
       setReview(undefined);
       setVerified(false);
@@ -257,6 +261,41 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   return (
     <div className="court-play">
       <p className="command-copy">{t("court.intro")}</p>
+      <fieldset disabled={pending} className="court-settings">
+        <legend>{t("court.settings")}</legend>
+        <label>
+          {t("court.register")}{" "}
+          <select
+            value={settings.register}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                register: e.target.value as CourtSettings["register"],
+              })
+            }
+          >
+            {(["classical", "plain", "modern"] as const).map((r) => (
+              <option key={r} value={r}>
+                {t(`court.register.${r}`)}
+              </option>
+            ))}
+          </select>
+        </label>{" "}
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.summaries}
+            onChange={(e) =>
+              setSettings({ ...settings, summaries: e.target.checked })
+            }
+          />
+          {t("court.summaries")}
+        </label>
+      </fieldset>
+      <details className="court-glossary">
+        <summary>{t("court.glossary")}</summary>
+        <p>{t("court.glossaryText")}</p>
+      </details>
       {error || snapshot?.error ? (
         <div role="alert" className="play-error">
           <p>{error ?? snapshot?.error}</p>
@@ -264,6 +303,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
       ) : null}
       <button
         className="restart-button"
+        title={t("court.settings")}
         disabled={pending}
         onClick={() => {
           if (!snapshot || window.confirm(t("court.confirmNew"))) void start();
@@ -297,6 +337,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
             <button
               className="restart-button"
               disabled={pending}
+              title={t("court.retry")}
               onClick={() => void retry()}
             >
               {t("court.retry")}
@@ -316,6 +357,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                 <button
                   className="restart-button"
                   disabled={pending}
+                  title={t("court.admit")}
                   onClick={() => void act({ type: "admit" })}
                 >
                   {t("court.admit")}
@@ -323,6 +365,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                 <button
                   className="restart-button"
                   disabled={pending}
+                  title={t("court.decline")}
                   onClick={() => void decline()}
                 >
                   {t("court.decline")}
@@ -334,9 +377,9 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               <h3>{t("court.desk")}</h3>
               {view.energy !== undefined ? (
                 <p role="status" className="court-energy">
-                  {t("court.energy", {
+                  {t(view.settings ? "court.energy" : "court.legacyEnergy", {
                     count: view.energy,
-                    capacity: imperialRules.perDay,
+                    capacity: view.energyCapacity ?? 3,
                   })}
                 </p>
               ) : null}
@@ -364,6 +407,9 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                     choice={choices[doc.id]}
                     onChange={(next) =>
                       setChoices({ ...choices, [doc.id]: next })
+                    }
+                    onPonder={() =>
+                      void act({ type: "ponder", documentId: doc.id })
                     }
                     onOpen={() =>
                       void act({ type: "open_message", documentId: doc.id })
@@ -421,6 +467,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                         (view.energy === 0 &&
                           !view.audience.conversation.length)
                       }
+                      title={t("court.talkHint")}
                       onClick={() =>
                         void act({ type: "converse", message: talk.trim() })
                       }
@@ -469,6 +516,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                     />
                     <button
                       className="court-link"
+                      title={t("court.remove")}
                       onClick={() =>
                         setSpecials(specials.filter((_, i) => i !== index))
                       }
@@ -480,6 +528,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                 {specials.length < 6 ? (
                   <button
                     className="court-link"
+                    title={t("court.specialHint")}
                     onClick={() =>
                       setSpecials([
                         ...specials,
@@ -500,6 +549,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                 <div className="view-switch">
                   {(["personal", "delegate"] as const).map((mode) => (
                     <button
+                      title={t("court.standing")}
                       key={mode}
                       className={standing.mode === mode ? "active" : ""}
                       onClick={() => setStanding({ ...standing, mode })}
@@ -534,6 +584,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               <button
                 className="restart-button court-submit"
                 disabled={pending}
+                title={t("court.close")}
                 onClick={() => void submit()}
               >
                 {seclusion > 1
@@ -543,6 +594,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               <button
                 className="court-link"
                 disabled={pending}
+                title={t("court.skipEmpty")}
                 onClick={() => void submit(true)}
               >
                 {t("court.skipEmpty")}
@@ -573,6 +625,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               <button
                 className="restart-button"
                 disabled={pending}
+                title={t("court.reveal")}
                 onClick={() =>
                   void perform(async () =>
                     setReview(
@@ -586,6 +639,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               <button
                 className="restart-button"
                 disabled={pending}
+                title={t("court.replay")}
                 onClick={() =>
                   void perform(async () => {
                     const result = await request<{ verified: boolean }>(
@@ -607,6 +661,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
             view={view}
             locale={locale}
             t={t}
+            onPonder={(documentId) => void act({ type: "ponder", documentId })}
             onOpen={(documentId) =>
               void act({ type: "open_message", documentId })
             }
@@ -625,6 +680,7 @@ export function DeskDocument({
   choice,
   onChange,
   onReveal,
+  onPonder,
   onOpen,
   expanded,
   onToggle,
@@ -637,6 +693,7 @@ export function DeskDocument({
   choice: Choice | undefined;
   onChange: (next: Choice) => void;
   onReveal: () => void;
+  onPonder?: () => void;
   onOpen: () => void;
   expanded: boolean;
   onToggle: () => void;
@@ -648,7 +705,7 @@ export function DeskDocument({
   const compact = view.energy !== undefined;
   const unread = doc.opened === false;
   const visible = !compact || (!unread && expanded);
-  const blocked = unread && view.energy === 0;
+  const blocked = unread && !view.settings && view.energy === 0;
   const needsReply =
     !doc.rescript &&
     (doc.kind === "memorial" ||
@@ -690,7 +747,13 @@ export function DeskDocument({
             }}
             title={
               unread
-                ? t(blocked ? "court.noEnergy" : "court.openMessage")
+                ? t(
+                    blocked
+                      ? "court.noEnergy"
+                      : view.settings
+                        ? "court.openMessage"
+                        : "court.legacyOpen",
+                  )
                 : undefined
             }
           >
@@ -714,11 +777,27 @@ export function DeskDocument({
               ) : null}
               <span>
                 {unread
-                  ? t(blocked ? "court.noEnergy" : "court.openCost")
+                  ? t(
+                      blocked
+                        ? "court.noEnergy"
+                        : view.settings
+                          ? "court.openCost"
+                          : "court.legacyOpen",
+                    )
                   : t(visible ? "court.collapse" : "court.expand")}
               </span>
             </span>
           </button>
+          {view.settings ? (
+            <button
+              className="court-ponder-button"
+              title={t("court.ponderHint")}
+              disabled={pending || unread || view.energy === 0}
+              onClick={onPonder}
+            >
+              {t("court.ponder")}
+            </button>
+          ) : null}
           {unread && (doc.draft || doc.hasDraft) ? (
             <select
               className="court-inbox-disposition"
@@ -750,16 +829,18 @@ export function DeskDocument({
         {doc.opened === false ? (
           <button
             className="court-link"
-            disabled={pending || view.energy === 0}
+            disabled={pending || (!view.settings && view.energy === 0)}
+            title={t("court.openMessage")}
             onClick={onOpen}
           >
-            {t("court.openMessage")}
+            {t(view.settings ? "court.openMessage" : "court.legacyOpen")}
           </button>
         ) : null}
         {doc.folded && doc.opened !== false ? (
           <button
             className="court-link"
-            disabled={pending || view.energy === 0}
+            disabled={pending || (!view.settings && view.energy === 0)}
+            title={t("court.revealHint")}
             onClick={onReveal}
           >
             {t("court.revealOriginal")}
@@ -781,6 +862,7 @@ export function DeskDocument({
           {dispositions.map((d) => (
             <button
               key={d}
+              title={t(`court.hint.${d}`)}
               className={choice.disposition === d ? "active" : ""}
               onClick={() =>
                 onChange({
@@ -866,6 +948,13 @@ function DocumentBody({ doc, t }: { doc: RulerDocumentView; t: Translator }) {
       ) : (
         <p className="court-text">{doc.text}</p>
       )}
+      {doc.gloss ? <p className="fog-note">（{doc.gloss}）</p> : null}
+      {doc.ponders?.map((p, i) => (
+        <blockquote className="court-ponder" key={i}>
+          <span>{t("court.ponderResult")}</span>
+          <p>{p.text}</p>
+        </blockquote>
+      ))}
       {doc.luBingNote ? (
         <div className="court-oral">
           <span>{t("court.luNote")}</span>
@@ -1010,11 +1099,13 @@ function Archive({
   t,
   onOpen,
   onReveal,
+  onPonder,
   pending,
 }: {
   view: CourtRulerView;
   locale: Locale;
   t: Translator;
+  onPonder: (id: string) => void;
   onOpen: (id: string) => void;
   onReveal: (id: string) => void;
   pending: boolean;
@@ -1033,18 +1124,32 @@ function Archive({
               <DocumentBody doc={doc} t={t} />
               {view.audience && doc.opened === false ? (
                 <button
-                  disabled={pending || view.energy === 0}
+                  disabled={pending || (!view.settings && view.energy === 0)}
+                  title={t("court.openMessage")}
                   onClick={() => onOpen(doc.id)}
                 >
-                  {t("court.openMessage")}
+                  {t(view.settings ? "court.openMessage" : "court.legacyOpen")}
                 </button>
               ) : null}
               {view.audience && doc.opened === true && doc.folded ? (
                 <button
-                  disabled={pending || view.energy === 0}
+                  disabled={pending || (!view.settings && view.energy === 0)}
+                  title={t("court.revealHint")}
                   onClick={() => onReveal(doc.id)}
                 >
                   {t("court.revealOriginal")}
+                </button>
+              ) : null}
+              {view.settings && view.audience ? (
+                <button
+                  className="court-ponder-button"
+                  title={t("court.ponderHint")}
+                  disabled={
+                    pending || doc.opened === false || view.energy === 0
+                  }
+                  onClick={() => onPonder(doc.id)}
+                >
+                  {t("court.ponder")}
                 </button>
               ) : null}
               {doc.rescript ? (

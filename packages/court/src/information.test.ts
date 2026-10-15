@@ -23,8 +23,33 @@ const bureau: CourtModel = async (request) =>
   });
 const quiet: CourtModel = async (r) =>
   r.bureau ? bureau(r) : JSON.stringify({ inner: "静候", reply: "奴婢在。" });
-const start = (model = quiet) =>
-  startCourtSession({ runId: "inbox-test", language: "zh-CN", model });
+// Exercise ADR 0010 saves with no settings field in their opening event.
+const start = async (model = quiet) => {
+  const current = await startCourtSession({
+    runId: "inbox-test",
+    language: "zh-CN",
+    model,
+    settings: { summaries: false },
+  });
+  const records = (await current.records()).map((r) => {
+    if (
+      (r.kind === "scheduled" || r.kind === "committed") &&
+      ["information.begin", "information.enabled"].includes(r.event.eventType)
+    ) {
+      const { settings: _, ...payload } = r.event.payload;
+      if (r.kind === "scheduled")
+        return { ...r, event: { ...r.event, payload } };
+      return { ...r, event: { ...r.event, payload } };
+    }
+    return r;
+  });
+  return startCourtSession({
+    runId: "inbox-test",
+    language: "zh-CN",
+    model,
+    records,
+  });
+};
 const close = (s: CourtSession) =>
   s.submit({ audienceId: s.view.audience!.id, items: [], specials: [] });
 

@@ -483,6 +483,13 @@ function RulerItem({
           </p>
         </article>
       );
+    case "ponder":
+      return (
+        <article className="talk">
+          <span className="tag">深思 · {entry.subject}</span>
+          <p>{entry.text}</p>
+        </article>
+      );
     case "conversation":
       return (
         <article className="talk">
@@ -525,6 +532,9 @@ function Paper({ paper, from }: { paper: ChroniclePaper; from: string }) {
         <p className="summary">吕芳只口奏了摘要：{paper.summary}</p>
       ) : (
         <p className="body">{paper.text}</p>
+      )}
+      {paper.gloss && paper.opened !== false && (
+        <p className="summary">（{paper.gloss}）</p>
       )}
       {paper.luBingNote && <p className="meta">陆炳附言：{paper.luBingNote}</p>}
       {paper.draft && (

@@ -8,6 +8,8 @@ import {
 import { replay } from "@throne/sim-core";
 import {
   createInitialState,
+  courtSettingsSchema,
+  type CourtSettings,
   reduceCourtState,
   startCourtSession,
   type AudienceAction,
@@ -75,16 +77,21 @@ export class CourtService {
     return join(this.root, "runs", "court", `${id}.json`);
   }
 
-  async create(locale: Locale): Promise<CourtSnapshot> {
+  async create(
+    locale: Locale,
+    settings: Partial<CourtSettings> = {},
+  ): Promise<CourtSnapshot> {
     if (this.entries.size >= 50)
       throw new Error(
         "Local session limit reached; restart the development server",
       );
+    const preferences = courtSettingsSchema.parse(settings);
     const id = randomUUID();
     const calls: LiveCallTrace[] = [];
     let initialError: string | undefined;
     const session = await startCourtSession({
       runId: id,
+      settings: preferences,
       language: locale,
       model: this.modelFactory((trace) => calls.push(trace)),
       fullLog: this.fullLog,

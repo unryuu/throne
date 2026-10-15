@@ -1,3 +1,4 @@
+import { courtSettingsSchema, type CourtSettings } from "./preferences.ts";
 import type { SimulationRecord } from "@throne/shared-types";
 import { InMemoryEventStore, SimulationKernel } from "@throne/sim-core";
 import { createInitialState, firstWorldCheckAt } from "./jiajing.ts";
@@ -7,7 +8,7 @@ import {
   type RescriptSubmission,
 } from "./model.ts";
 import { parseCourtDecision, type CourtModel } from "./npc.ts";
-import { parseBureau } from "./information.ts";
+import { parseBureau, parseSummaries, parsePonder } from "./information.ts";
 import type { IntelligenceFact } from "./types.ts";
 import type { CourtState } from "./types.ts";
 import {
@@ -36,6 +37,7 @@ export type CourtSession = {
 const playerEvents = [
   "court.rescript",
   "court.converse",
+  "court.ponder",
   "court.reveal",
   "court.open_message",
   "court.admit",
@@ -48,6 +50,7 @@ export async function startCourtSession(options: {
   records?: readonly SimulationRecord[];
   decisionBudget?: number;
   information?: boolean;
+  settings?: Partial<CourtSettings>;
   onInitialFailure?: (error: unknown) => void;
   /** Give regular decisions the whole experience log (terminal mode). */
   fullLog?: boolean;
@@ -60,7 +63,10 @@ export async function startCourtSession(options: {
     for (let attempt = 1; ; attempt += 1) {
       const text = await options.model(request);
       try {
-        if (request.bureau)
+        if (request.summaries)
+          parseSummaries(text, (request.input.texts as string[]).length);
+        else if (request.ponder) parsePonder(text);
+        else if (request.bureau)
           parseBureau(
             text,
             request.input.facts as unknown as readonly IntelligenceFact[],
@@ -101,6 +107,7 @@ export async function startCourtSession(options: {
         eventType: "information.begin",
         scheduledAt: initial.nextAudienceAt!,
         payload: {
+          settings: courtSettingsSchema.parse(options.settings ?? {}),
           ...(options.decisionBudget !== undefined
             ? { decisionBudget: options.decisionBudget }
             : {}),

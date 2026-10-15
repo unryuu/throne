@@ -1,9 +1,9 @@
 // Playtest driver: spend attention on independent channels, follow drafts and occasionally inquire.
-// Usage: npx tsx apps/web/server/court-autoplay.ts [days=15]
+// Usage: npx tsx apps/web/server/court-autoplay.ts [days=15] [--register=modern] [--summaries=true]
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ids, type SpecialEdict } from "@throne/court";
+import { ids, courtSettingsSchema, type SpecialEdict } from "@throne/court";
 import { CourtService } from "./court-service.ts";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -14,8 +14,18 @@ const say = (line: string) => {
   appendFileSync(log, line + "\n");
   console.log(line);
 };
+const flag = (name: string, fallback: string) =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1] ??
+  fallback;
+const summaries = flag("summaries", "true");
+if (summaries !== "true" && summaries !== "false")
+  throw new Error("--summaries must be true or false");
+const settings = courtSettingsSchema.parse({
+  register: flag("register", "modern"),
+  summaries: summaries === "true",
+});
 const service = new CourtService(root);
-let snap = await service.create("zh-CN");
+let snap = await service.create("zh-CN", settings);
 say(`run ${snap.id} log ${log}`);
 let sent = false;
 let asked = false;
@@ -73,7 +83,10 @@ for (let i = 0; i < 400; i += 1) {
           ? 2
           : 3;
   for (const doc of [...audience.documents].sort((a, b) => rank(a) - rank(b))) {
-    if (snap.view.energy === undefined || snap.view.energy <= specials.length)
+    if (
+      !snap.view.settings &&
+      (snap.view.energy === undefined || snap.view.energy <= specials.length)
+    )
       break;
     if (doc.opened !== false) continue;
     snap = await service.act(snap.id, audience.id, {
@@ -82,6 +95,20 @@ for (let i = 0; i < 400; i += 1) {
     });
     if (snap.status !== "waiting")
       throw new Error(snap.error ?? "Could not open message");
+  }
+  if (day % 2 === 0 && (snap.view.energy ?? 0) > specials.length) {
+    const doc = snap.view.audience!.documents.find(
+      (d) => d.opened && !d.ponders?.length,
+    );
+    if (doc) {
+      snap = await service.act(snap.id, audience.id, {
+        type: "ponder",
+        documentId: doc.id,
+      });
+      if (snap.status !== "waiting")
+        throw new Error(snap.error ?? "Ponder failed");
+      say(`  pondered ${doc.subject}`);
+    }
   }
   const t = Date.now();
   snap = await service.submit(snap.id, {

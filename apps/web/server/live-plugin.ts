@@ -1,6 +1,10 @@
 import type { IncomingMessage } from "node:http";
 import type { Plugin } from "vite";
-import type { AudienceAction, RescriptSubmission } from "@throne/court";
+import {
+  courtSettingsSchema,
+  type AudienceAction,
+  type RescriptSubmission,
+} from "@throne/court";
 import { CourtService } from "./court-service.ts";
 import { LiveService } from "./live-service.ts";
 
@@ -44,7 +48,10 @@ export function livePlugin(root: string): Plugin {
           if (req.method === "POST") {
             const body = await readLocalJson(req, 65536);
             if (!id && (body.locale === "zh-CN" || body.locale === "en"))
-              result = await court.create(body.locale);
+              result = await court.create(
+                body.locale,
+                courtSettingsSchema.parse(body.settings ?? {}),
+              );
             else if (id && action === "rescript" && body.submission)
               result = await court.submit(
                 id,

@@ -1,10 +1,20 @@
 import {
+  courtSettingsSchema,
+  registerInstruction,
+  type CourtRegister,
+} from "./preferences.ts";
+import { courtRulerView, audienceActionProblem } from "./views.ts";
+import {
   briefAuthors,
   generateFacts,
   imperialEnergy,
   imperialRules,
   bureauPrompt,
   parseBureau,
+  parseSummaries,
+  parsePonder,
+  summaryPrompt,
+  ponderPrompt,
 } from "./information.ts";
 import type {
   DomainEvent,
@@ -101,6 +111,7 @@ export type RescriptSubmission = {
 };
 /** Things the emperor does inside an open decision point before closing it. */
 export type AudienceAction =
+  | { readonly type: "ponder"; readonly documentId: string }
   | { readonly type: "converse"; readonly message: string }
   | { readonly type: "reveal"; readonly documentId: string }
   | { readonly type: "open_message"; readonly documentId: string }
@@ -284,7 +295,22 @@ function governorId(state: CourtState): string {
   return state.actors[ids.zheng]?.active ? ids.zheng : ids.hu;
 }
 
-function defaultEdictText(edict: Edict, language: string): string {
+function defaultEdictText(
+  edict: Edict,
+  language: string,
+  register?: CourtRegister,
+): string {
+  if (register === "modern" && language !== "en")
+    return {
+      request_memorial: `朕问：${String(edict.params.question)} 请写奏疏回复。`,
+      acknowledge: "知道了。",
+      reject: "不批准这项请求。",
+      approve_policy: "批准实施。",
+      order_relief: "立即向灾民发放救济。",
+      order_inquiry: "立即调查，如实汇报。",
+      reprimand: "严肃警告，立即纠正。",
+      arrest: "撤去官职，逮捕审问。",
+    }[edict.kind];
   const en = language === "en";
   switch (edict.kind) {
     case "request_memorial":
@@ -384,8 +410,13 @@ function issueEdict(
             : "上谕",
     text:
       edict.kind === "request_memorial"
-        ? `${defaultEdictText(edict, options.language)}${text.trim() ? `\n${text.trim()}` : ""}`
-        : text.trim() || defaultEdictText(edict, options.language),
+        ? `${defaultEdictText(edict, options.language, ctx.state.settings?.register)}${text.trim() ? `\n${text.trim()}` : ""}`
+        : text.trim() ||
+          defaultEdictText(
+            edict,
+            options.language,
+            ctx.state.settings?.register,
+          ),
     edict,
     ...(reply ? { replyToId: reply.id } : {}),
   });
@@ -444,7 +475,12 @@ function handleRescript(
       ctx,
       interruption.byId,
       "interruption_declined",
-      { content: "皇上闭关修玄，未召见。" },
+      {
+        content:
+          ctx.state.settings?.register === "modern"
+            ? "皇上闭关修道，暂不召见。"
+            : "皇上闭关修玄，未召见。",
+      },
       false,
     );
     return;
@@ -546,7 +582,12 @@ function handleRescript(
       ctx,
       ids.lvFang,
       "seclusion",
-      { content: `皇上闭关修玄${span}日。` },
+      {
+        content:
+          ctx.state.settings?.register === "modern"
+            ? `皇上闭关修道${span}天。`
+            : `皇上闭关修玄${span}日。`,
+      },
       false,
     );
 }
@@ -583,7 +624,12 @@ function noteDirectAudience(ctx: Context, documentIds: readonly string[]) {
       ctx,
       ids.lvFang,
       "direct_audience",
-      { content: "陆炳今日单独面圣，所奏何事不详。" },
+      {
+        content:
+          ctx.state.settings?.register === "modern"
+            ? "陆炳今天单独见了皇上，不清楚汇报了什么。"
+            : "陆炳今日单独面圣，所奏何事不详。",
+      },
       false,
     );
 }
@@ -626,7 +672,7 @@ function openAudience(ctx: Context): void {
 
 function handleAudienceAction(
   ctx: Context,
-  action: Exclude<AudienceAction, { type: "converse" }>,
+  action: Exclude<AudienceAction, { type: "converse" | "ponder" }>,
 ): void {
   const audience = ctx.state.audience;
   if (ctx.state.phase !== "audience" || !audience)
@@ -648,7 +694,7 @@ function handleAudienceAction(
       doc.openedAt !== undefined
     )
       throw new Error("这条消息不能展开");
-    spendImperial(ctx, 1, "read");
+    if (!ctx.state.settings) spendImperial(ctx, 1, "read");
     ctx.commit("information.message_opened", { documentId: doc.id });
     return;
   }
@@ -661,7 +707,8 @@ function handleAudienceAction(
     doc.revealedAt !== undefined
   )
     throw new Error("This paper has no folded original to call for");
-  if (ctx.state.information) spendImperial(ctx, 1, "original");
+  if (ctx.state.information && !ctx.state.settings)
+    spendImperial(ctx, 1, "original");
   ctx.commit("document.revealed", { documentId: doc.id });
   if (!ctx.state.information)
     observe(
@@ -824,7 +871,10 @@ function resolveAction(ctx: Context, actionId: string): void {
       };
       ctx.commit("evidence.created", { evidence: j(evidence) });
       return finish("succeeded", {
-        note: "河道差役已按吩咐动了手脚，汛至必决",
+        note:
+          state.settings?.register === "modern"
+            ? "河道差役已按吩咐破坏大堤，洪水一来就会决口"
+            : "河道差役已按吩咐动了手脚，汛至必决",
       });
     }
     case "repair_dike": {
@@ -904,9 +954,14 @@ function handleFlood(ctx: Context): void {
       },
     });
   }
-  const news = breached.length
-    ? `端午大汛，新安江水涨，${breached.join("、")}大堤决口，田舍被淹。`
-    : "端午大汛，新安江水涨，沿江大堤俱未决口。";
+  const news =
+    ctx.state.settings?.register === "modern"
+      ? breached.length
+        ? `端午洪水来了，新安江水位上涨，${breached.join("、")}的大堤决口，田地房屋被淹。`
+        : "端午洪水来了，新安江水位上涨，沿江大堤都没有决口。"
+      : breached.length
+        ? `端午大汛，新安江水涨，${breached.join("、")}大堤决口，田舍被淹。`
+        : "端午大汛，新安江水涨，沿江大堤俱未决口。";
   for (const actorId of [ids.zheng, ids.hu, ids.yang])
     observe(ctx, actorId, actorId === ids.zheng ? "flood" : "news", {
       content: news,
@@ -946,7 +1001,10 @@ function handleWorldCheck(ctx: Context): void {
         });
     else if (deathsAdded > 0)
       observe(ctx, governorId(ctx.state), "famine", {
-        content: `${c.name}县报：赈粮不继，五日内饿死约${deathsAdded}人。`,
+        content:
+          ctx.state.settings?.register === "modern"
+            ? `${c.name}县报告：救济粮接不上，五天内约有${deathsAdded}人饿死。`
+            : `${c.name}县报：赈粮不继，五日内饿死约${deathsAdded}人。`,
       });
   }
   if (ctx.time + worldCheckInterval < ctx.state.endsAt)
@@ -960,6 +1018,24 @@ function jinyiweiReport(
   language: string,
 ): string {
   const c = state.counties[countyId];
+  if (state.settings?.register === "modern" && language !== "en")
+    return [
+      `臣等奉旨调查了${c.name}。`,
+      c.breach
+        ? `新安江大堤已经决口，约${c.inundatedMu}万亩田被淹，约${c.homeless}万人无家可归，已有${c.deaths}人死亡。`
+        : "大堤没有决口。",
+      `官府累计发放救济粮${c.reliefDelivered}万石。`,
+      c.merchantGrainDelivered
+        ? `沈一石另拿出${c.merchantGrainDelivered}万石粮食换取田地。`
+        : "",
+      `已有${c.mulberryMu}万亩稻田改种桑树，其中${c.annexedMu}万亩被沈一石低价收购。`,
+      `百姓${c.unrest >= 0.5 ? "怨气很重" : c.unrest >= 0.3 ? "有些不安" : "情绪还算安定"}。`,
+      testimony
+        ? c.breach === "sabotage"
+          ? "河工说，按察司差役趁夜挖开了大堤，这是人为破坏。"
+          : `河工说，按察司差役曾趁夜破坏大堤，${c.dikeSabotaged ? "至今没有修好" : "后来已经修好"}。`
+        : "",
+    ].join("");
   const level = c.unrest >= 0.5 ? "汹汹" : c.unrest >= 0.3 ? "不安" : "尚安";
   if (language === "en")
     return [
@@ -1488,12 +1564,20 @@ function applyDisposition(
   if (item.action === "return") {
     ctx.commit("document.returned", {
       documentId: doc.id,
-      note: text || "着内阁重拟。",
+      note:
+        text ||
+        (ctx.state.settings?.register === "modern"
+          ? "请内阁重新拟一份答复。"
+          : "着内阁重拟。"),
     });
     observe(ctx, ids.yanSong, "returned_by_directorate", {
       subject: doc.subject,
       from: ctx.state.actors[doc.fromId]?.name ?? doc.fromId,
-      note: text || "着内阁重拟。",
+      note:
+        text ||
+        (ctx.state.settings?.register === "modern"
+          ? "请内阁重新拟一份答复。"
+          : "着内阁重拟。"),
     });
     return;
   }
@@ -1593,8 +1677,10 @@ async function composeBureau(ctx: Context, options: Options, day: number) {
     decisionEpisodeId: `court:bureau:${day}`,
     sessionKey: `${options.runId}:bureau`,
     bureau: true,
-    systemPrompt: bureauPrompt,
+    systemPrompt:
+      bureauPrompt + "\n" + registerInstruction(ctx.state.settings?.register),
     prompt: JSON.stringify({
+      writingStyle: registerInstruction(ctx.state.settings?.register),
       date: formatCourtTime(ctx.time, "zh-CN"),
       facts: facts.map((f) => ({
         id: f.id,
@@ -1615,6 +1701,71 @@ async function composeBureau(ctx: Context, options: Options, day: number) {
   ctx.commit("information.bureau_composed", { day });
 }
 
+async function summarizePresented(ctx: Context, options: Options) {
+  if (!ctx.state.settings?.summaries || !ctx.state.audience) return;
+  const documents = ctx.state.audience.documentIds
+    .map((id) => ctx.state.documents[id]!)
+    .filter((d) => d.gloss === undefined);
+  if (!documents.length) return;
+  const input = {
+    texts: documents.map((d) =>
+      d.directorate?.action === "summarize" && d.revealedAt === undefined
+        ? (d.directorate.text ?? "")
+        : d.text,
+    ),
+  };
+  const text = await options.model({
+    decisionEpisodeId: `court:summaries:${ctx.state.audience.id}:${documents.map((d) => d.id).join(",")}`,
+    sessionKey: `${options.runId}:summaries`,
+    summaries: true,
+    systemPrompt: summaryPrompt,
+    prompt: JSON.stringify(input),
+    input,
+  });
+  const summaries = parseSummaries(text, documents.length);
+  ctx.commit("information.summarized", {
+    items: documents.map((d, i) => ({ documentId: d.id, text: summaries[i]! })),
+  });
+}
+
+async function handlePonder(
+  ctx: Context,
+  options: Options,
+  documentId: string,
+) {
+  const problem = audienceActionProblem(
+    ctx.state,
+    ctx.state.audience?.id ?? "",
+    { type: "ponder", documentId },
+  );
+  if (problem) throw new Error(problem);
+  const view = courtRulerView(ctx.state, ctx.time);
+  const document = [...(view.audience?.documents ?? []), ...view.archive].find(
+    (d) => d.id === documentId,
+  )!;
+  const input = j({
+    document,
+    desk: view.audience?.documents ?? [],
+    archive: view.archive,
+    edicts: view.edicts,
+    conversations: view.conversations ?? [],
+    oralReports: view.audience?.oralReports ?? [],
+    date: formatCourtTime(ctx.time, "zh-CN"),
+  }) as JsonObject;
+  const text = parsePonder(
+    await options.model({
+      decisionEpisodeId: `court:ponder:${documentId}:${ctx.state.documents[documentId]?.ponders?.length ?? 0}`,
+      sessionKey: `${options.runId}:ponder`,
+      ponder: true,
+      systemPrompt: ponderPrompt,
+      prompt: JSON.stringify(input),
+      input,
+    }),
+  );
+  spendImperial(ctx, 1, "ponder");
+  ctx.commit("court.pondered", { documentId, text });
+}
+
 export function createCourtModel(options: Options): DomainModel<CourtState> {
   return {
     async resolveBatch({ state, time, events }) {
@@ -1629,7 +1780,32 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
           case "information.begin":
             ctx.commit("information.enabled", {
               decisionBudget: p.decisionBudget ?? imperialRules.decisionBudget,
+              ...(p.settings !== undefined
+                ? { settings: courtSettingsSchema.parse(p.settings) }
+                : {}),
             });
+            if (ctx.state.settings?.register === "modern") {
+              for (const [documentId, subject, text, draftText] of [
+                [
+                  ids.policyMemorial,
+                  "请求在浙江改种桑树增加国库收入",
+                  "臣严嵩等奏报：国库的钱不够支撑一年的开销，宫中用度和边军军饷都等着拨款。浙江适合养蚕种桑，把稻田改成桑田，今年可以多产几十万匹丝绸，由织造局卖给西洋商人，每年可收入几百万两银子。建议今年先改五十万亩，由地方官负责买田，给百姓合理的价钱，不要扰民。请皇上裁定。",
+                  "批准。浙江今年把五十万亩稻田改种桑树，丝绸交给织造局。地方官要妥善办理，不许扰民，也不许拖延。",
+                ],
+                [
+                  ids.armyMemorial,
+                  "请求拨发抗倭军饷",
+                  "臣胡宗宪奏报：倭寇多次进犯台州、温州，戚继光等将士接连打胜仗，但军饷已拖欠三个月，军粮只够再用两个月。请朝廷尽快拨款，稳定军心。听说朝廷准备在浙江改稻为桑，此事关系百姓生计，建议慎重推进，避免后方生乱。",
+                  "知道了。军饷由户部想办法筹措。",
+                ],
+              ])
+                ctx.commit("document.restyled", {
+                  documentId: documentId!,
+                  subject: subject!,
+                  text: text!,
+                  draftText: draftText!,
+                });
+            }
             for (const actorId of briefAuthors)
               ctx.commit("actor.updated", {
                 actorId,
@@ -1644,6 +1820,10 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
             break;
           case "information.daily":
             dailyInformation(ctx);
+            break;
+          case "information.summarize":
+            await summarizePresented(ctx, options);
+            ctx.commit("information.summaries_ready", {});
             break;
           case "information.compose":
             await composeBureau(ctx, options, Number(p.day));
@@ -1665,6 +1845,13 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
             )
               prepareBureau(ctx);
             else openAudience(ctx);
+            break;
+          case "court.ponder":
+            await handlePonder(
+              ctx,
+              options,
+              (p.action as JsonObject).documentId as string,
+            );
             break;
           case "court.converse":
             await handleConverse(ctx, options, String(p.message));
@@ -1696,7 +1883,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
               ctx,
               p.action as unknown as Exclude<
                 AudienceAction,
-                { type: "converse" }
+                { type: "converse" | "ponder" }
               >,
             );
             break;
@@ -1716,7 +1903,10 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
             if (doc.rescript && doc.rescript.disposition !== "hold") break;
             ctx.commit("document.silence_noticed", { documentId: doc.id });
             observe(ctx, doc.fromId, "no_reply", {
-              content: `所上《${doc.subject}》至今未见批复。`,
+              content:
+                ctx.state.settings?.register === "modern"
+                  ? `你提交的《${doc.subject}》至今没有收到答复。`
+                  : `所上《${doc.subject}》至今未见批复。`,
             });
             break;
           }
@@ -1732,7 +1922,10 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
           case "jinyiwei.arrive":
             for (const actorId of [ids.zheng, ids.yang])
               observe(ctx, actorId, "rumor", {
-                content: `锦衣卫缇骑奉旨抵杭，往${ctx.state.counties[p.countyId as CountyId].name}查勘。`,
+                content:
+                  ctx.state.settings?.register === "modern"
+                    ? `锦衣卫奉皇上命令抵达杭州，前往${ctx.state.counties[p.countyId as CountyId].name}调查。`
+                    : `锦衣卫缇骑奉旨抵杭，往${ctx.state.counties[p.countyId as CountyId].name}查勘。`,
               });
             ctx.later("jinyiwei.inspect", time + days(5), p);
             break;
@@ -1785,6 +1978,16 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
       }
       if (decisions.length && ctx.state.phase !== "complete")
         await handleDecisions(ctx, options, decisions);
+      if (
+        ctx.state.phase === "audience" &&
+        ctx.state.settings?.summaries &&
+        ctx.state.audience?.documentIds.some(
+          (id) => ctx.state.documents[id]!.gloss === undefined,
+        )
+      ) {
+        ctx.commit("information.summaries_pending", {});
+        ctx.later("information.summarize", ctx.time, {});
+      }
       return { events: ctx.committed, scheduled: ctx.scheduled };
     },
     reduce: reduceCourtState,
@@ -1849,18 +2052,38 @@ export function reduceCourtState(
   const p = event.payload;
   const time = event.occurredAt;
   switch (event.eventType) {
+    case "information.summaries_pending":
     case "information.admission_preparing":
       return { ...state, phase: "running" };
+    case "information.summaries_ready":
     case "information.admission_ready":
       return { ...state, phase: "audience" };
+    case "information.summarized": {
+      let next = state;
+      for (const item of p.items as { documentId: string; text: string }[])
+        next = patchDocument(next, item.documentId, { gloss: item.text });
+      return next;
+    }
+    case "court.pondered": {
+      const doc = state.documents[String(p.documentId)]!;
+      return patchDocument(state, doc.id, {
+        ponders: [...(doc.ponders ?? []), { at: time, text: String(p.text) }],
+      });
+    }
     case "information.enabled":
       return {
         ...state,
+        ...(p.settings !== undefined
+          ? { settings: courtSettingsSchema.parse(p.settings) }
+          : {}),
         decisionBudget: Number(p.decisionBudget),
         information: {
           version: 1,
           day: Math.floor(time / 12),
-          remaining: imperialRules.perDay,
+          remaining:
+            p.settings !== undefined
+              ? imperialRules.perDay
+              : imperialRules.legacyPerDay,
           facts: [],
           bureauDays: [],
         },
@@ -1991,6 +2214,14 @@ export function reduceCourtState(
       const audience = state.audience!;
       return {
         ...state,
+        ...(state.settings
+          ? {
+              rulerConversations: [
+                ...(state.rulerConversations ?? []),
+                { at: time, ruler: String(p.message), reply: String(p.reply) },
+              ],
+            }
+          : {}),
         audience: {
           ...audience,
           conversation: [
@@ -2118,6 +2349,16 @@ export function reduceCourtState(
           ...doc.rescript!,
           edictDocumentId: String(p.edictDocumentId),
         },
+      });
+    }
+    case "document.restyled": {
+      const doc = state.documents[String(p.documentId)]!;
+      return patchDocument(state, doc.id, {
+        subject: String(p.subject),
+        text: String(p.text),
+        ...(doc.draft
+          ? { draft: { ...doc.draft, text: String(p.draftText) } }
+          : {}),
       });
     }
     case "document.sent": {

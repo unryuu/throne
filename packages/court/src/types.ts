@@ -108,6 +108,8 @@ export type CourtDocument = {
   readonly replyToId?: string;
   readonly decisionEpisodeId?: string;
   readonly scripted?: boolean;
+  readonly gloss?: string;
+  readonly ponders?: readonly { readonly at: SimTime; readonly text: string }[];
   readonly openedAt?: SimTime;
   readonly rumorIds?: readonly string[];
   readonly factId?: string;
@@ -209,6 +211,12 @@ export type OralReport = {
 };
 
 export type CourtState = {
+  readonly settings?: import("./preferences.ts").CourtSettings;
+  readonly rulerConversations?: readonly {
+    readonly at: SimTime;
+    readonly ruler: string;
+    readonly reply: string;
+  }[];
   readonly information?: ImperialInformation;
   readonly phase: "running" | "audience" | "complete";
   readonly seed: string;

@@ -1,3 +1,4 @@
+import { registerInstruction, type CourtRegister } from "./preferences.ts";
 import type { JsonObject, JsonValue } from "@throne/shared-types";
 
 /**
@@ -214,6 +215,7 @@ export function shellHelp(input: JsonObject = {}): string {
     );
   return [
     "这是你的终端。文件只读，是你此刻所知的一切；命令就是你今天能做的事。",
+    registerInstruction(input.register as CourtRegister | undefined),
     "",
     "文件：",
     "  profile.txt     你是谁",
@@ -1688,13 +1690,14 @@ export function shellSystemPrompt(input: JsonObject): string {
     "你可以想一套、说一套、做一套。皇帝只看得到送到御前的文书，看不到你的内心和私信。",
     "你面前是一台终端（bash 工具）。文件是你此刻所知的一切，命令就是你今天能做的事：查阅用 ls、cat、grep 等，发文书用 send，办事用 act。",
     "今天你看到的是今早的情形。发出的文书和办的事要等你收笔后世界才给出结果，不要声称事情已经办成。可以什么都不做。",
-    "文书用半文半白的明代公文口吻，每份不超过200字。",
+    registerInstruction(input.register as CourtRegister | undefined),
+    "每份文书不超过200字。",
     ...(input.briefInstruction ? [String(input.briefInstruction)] : []),
     ...(input.rumorInstruction ? [String(input.rumorInstruction)] : []),
     ...(input.dispositionOptions !== undefined
       ? [
           input.briefInstruction
-            ? "口奏可以报喜不报忧，但皇上另有耳目。report 必须自己写 --subject 标题（≤20字）；皇帝先看标题，花精力展开后才听正文。"
+            ? "口奏可以报喜不报忧，但皇上另有耳目。report 必须自己写 --subject 标题（≤20字）；皇帝先看标题，展开后才听正文。"
             : "口奏可以报喜不报忧，但皇上另有耳目。",
         ]
       : []),
