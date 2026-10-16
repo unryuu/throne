@@ -8,6 +8,7 @@
 - [DESIGN](DESIGN.md)：玩法意图，首次参与必读，以后按相关章节查阅。
 - [architecture](architecture/overview.md)：架构与仍生效的决定；任命机制见 ADR 0003。
 - [providers](providers.md)：接入模型时查阅。
+- [等待时间与用量](performance.md)：优化耗时、token 或缓存命中前必读，记着试过和证伪的办法。
 - [真实 NPC 接入](architecture/0004-live-npc.md)：本地服务、调用边界、失败恢复与持久回放。
 - [连续短局](architecture/0005-continuous-crisis.md)：两次决策、命令历史、人物记忆与御前时间线。
 - [奏疏流转](architecture/0006-court-memorials.md)：朝廷场景、想/说/做、批红与行动校验。

@@ -32,4 +32,6 @@ Sharing (2026-10-15): friends clone the repo and run `npm run play`, which insta
 
 Ponder, summaries, register, terminal desk (2026-10-15): reading is now free and the emperor has 2 energy a day; pondering a message (a DeepSeek monologue in Jiajing's voice, built only from what the emperor has seen), talking to Lü Fang, a personal edict or a rewritten rescript each cost 1. A neutral outside reader adds a one-line plain-Chinese gloss to each message. New games choose classical / plain / modern register. `npm run play` now opens a full-screen terminal desk driven by arrow keys and Enter (`--web` for the browser, `--demo` without a key). Old saves keep their old rules. Rules: [ADR 0011](docs/architecture/0011-ponder-summary-register-terminal.md); notes: [FEAT-0012](docs/issues/active/ponder-summary-register.md). Not yet played by a human.
 
+Speed and usage (2026-10-15): before tuning wait time, tokens or cache hits, read [docs/performance.md](docs/performance.md); `reasoning_effort: low` does nothing on deepseek-flash, and fewer terminal round trips did not shorten a day.
+
 Next: see [HANDOFF.md](HANDOFF.md).
