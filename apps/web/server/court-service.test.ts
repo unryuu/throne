@@ -1,5 +1,7 @@
+import { Analytics, analyticsPath, readAnalytics } from "./analytics.ts";
+import { usageTotals } from "./model-cost.ts";
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CourtModel, IntelligenceFact } from "@throne/court";
@@ -62,8 +64,23 @@ describe("court service", () => {
   it("saves every step, restores after restart and replays without calls", async () => {
     const root = await mkdtemp(join(tmpdir(), "throne-court-test-"));
     let calls = 0;
-    const service = new CourtService(root, () => quietModel(() => calls++));
-    const start = await service.create("zh-CN");
+    await mkdir(join(root, "secret"));
+    await writeFile(
+      join(root, "secret/passcodes.json"),
+      JSON.stringify([{ label: "渠道A", code: "a", enabled: true }]),
+    );
+    const analytics = new Analytics(root);
+    const service = new CourtService(
+      root,
+      () => quietModel(() => calls++),
+      undefined,
+      analytics,
+    );
+    const start = await service.create(
+      "zh-CN",
+      {},
+      { attribution: { channel: "渠道A", visitor: "v1" } },
+    );
     expect(start.status).toBe("waiting");
     const first = start.view.audience!;
     const talked = await service.act(start.id, first.id, {
@@ -85,7 +102,12 @@ describe("court service", () => {
     expect(JSON.stringify(after)).not.toContain("心里另有盘算");
     await expect(service.review(start.id)).rejects.toThrow("after the reign");
 
-    const restarted = new CourtService(root, () => quietModel(() => calls++));
+    const restarted = new CourtService(
+      root,
+      () => quietModel(() => calls++),
+      undefined,
+      new Analytics(root),
+    );
     const restored = await restarted.get(start.id);
     expect(restored.view).toEqual(after.view);
     const done = await finish(restarted, restored);
@@ -102,6 +124,31 @@ describe("court service", () => {
       "utf8",
     );
     expect(raw).not.toContain("sk-");
+    const events = await readAnalytics(analyticsPath(root));
+    expect(events.filter((e) => e.type === "run.started")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "run.completed")).toEqual([
+      expect.objectContaining({
+        runId: start.id,
+        channel: "渠道A",
+        visitor: "v1",
+        day: Math.floor(done.view.time / 12),
+      }),
+    ]);
+    expect(
+      events.some((e) => e.type === "run.progress" && e.operation === "act"),
+    ).toBe(true);
+    expect(
+      events.some(
+        (e) =>
+          e.type === "run.progress" && e.operation === "rescript" && e.day > 0,
+      ),
+    ).toBe(true);
+    expect(events.filter((e) => e.type === "run.usage").at(-1)).toMatchObject({
+      usage: usageTotals(review.calls),
+    });
+    expect(await readAnalytics(analyticsPath(root))).toHaveLength(
+      events.length,
+    );
   }, 30000);
 
   it("keeps the audience open after an invalid submission and retries failed calls", async () => {
@@ -160,4 +207,40 @@ it("saves a failed opening composition and resumes it after restart", async () =
   const ready = await restored.retry(failed.id);
   expect(ready.status).toBe("waiting");
   expect(ready.view.audience!.documents.length).toBeGreaterThanOrEqual(5);
+});
+
+it("does not attribute historical costs on GET and binds a legacy run only on its first write", async () => {
+  const root = await mkdtemp(join(tmpdir(), "analytics-legacy-"));
+  const original = new CourtService(root, () => quietModel());
+  const start = await original.create("zh-CN");
+  const history = original.entries.get(start.id)!.calls.length;
+  const service = new CourtService(
+    root,
+    () => quietModel(),
+    undefined,
+    new Analytics(root),
+  );
+  const restored = await service.get(start.id);
+  expect(await readAnalytics(analyticsPath(root))).toEqual([]);
+  const after = await service.act(
+    start.id,
+    restored.view.audience!.id,
+    { type: "converse", message: "今日如何？" },
+    { channel: "旧局渠道", visitor: "v2" },
+  );
+  expect(after.error).toBeUndefined();
+  const events = await readAnalytics(analyticsPath(root));
+  expect(events.some((e) => e.type === "run.started")).toBe(false);
+  expect(events.find((e) => e.type === "run.usage")).toMatchObject({
+    channel: "旧局渠道",
+    usage: usageTotals(service.entries.get(start.id)!.calls.slice(history)),
+  });
+  const saved = JSON.parse(
+    await readFile(join(root, "runs/court", `${start.id}.json`), "utf8"),
+  );
+  expect(saved.analytics).toEqual({
+    channel: "旧局渠道",
+    visitor: "v2",
+    callOffset: history,
+  });
 });

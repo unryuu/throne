@@ -1,3 +1,4 @@
+import type { Visitor } from "./passcodes.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   courtSettingsSchema,
@@ -20,7 +21,12 @@ async function readJson(
 }
 
 export function createCourtHandler(court: CourtService) {
-  return async (req: IncomingMessage, res: ServerResponse, path: string) => {
+  return async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+    attribution?: Visitor,
+  ) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     try {
@@ -49,6 +55,7 @@ export function createCourtHandler(court: CourtService) {
             body.locale,
             courtSettingsSchema.parse(body.settings ?? {}),
             {
+              ...(attribution ? { attribution } : {}),
               ...(Array.isArray(body.excludePackIds) &&
               body.excludePackIds.every((id) => typeof id === "string")
                 ? { excludePackIds: body.excludePackIds as string[] }
@@ -63,14 +70,17 @@ export function createCourtHandler(court: CourtService) {
           result = await court.submit(
             id,
             body.submission as RescriptSubmission,
+            attribution,
           );
         else if (id && action === "act" && body.action)
           result = await court.act(
             id,
             String(body.audienceId),
             body.action as AudienceAction,
+            attribution,
           );
-        else if (id && action === "retry") result = await court.retry(id);
+        else if (id && action === "retry")
+          result = await court.retry(id, attribution);
         else throw new Error("Invalid court request");
       } else if (req.method === "GET" && id) {
         if (id === "progress" && action)

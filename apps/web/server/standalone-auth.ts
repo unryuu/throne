@@ -1,4 +1,11 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { readPasscodes, type Passcode, type Visitor } from "./passcodes.ts";
+import type { Analytics } from "./analytics.ts";
+import {
+  createHash,
+  createHmac,
+  timingSafeEqual,
+  randomUUID,
+} from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -18,25 +25,23 @@ export async function readAuthSecrets(root: string) {
     return value;
   };
   return {
-    password: await read("THRONE_PASSWORD", "password.txt"),
     signingKey: await read("THRONE_COOKIE_SECRET", "cookie-secret.txt"),
   };
 }
 
 export function createAuth(options: {
-  readonly password: string;
+  readonly root: string;
+  readonly analytics: Analytics;
   readonly signingKey: string;
   readonly origin: string;
   readonly now?: () => number;
 }) {
-  if (!options.password || Buffer.byteLength(options.signingKey) < 32)
-    throw new Error(
-      "A password and a cookie signing secret of at least 32 bytes are required",
-    );
+  if (Buffer.byteLength(options.signingKey) < 32)
+    throw new Error("A cookie signing secret of at least 32 bytes is required");
   const now = options.now ?? Date.now;
-  const sign = (payload: string) =>
+  const sign = (payload: string, code: string) =>
     createHmac("sha256", options.signingKey)
-      .update(digest(options.password))
+      .update(digest(code))
       .update(payload)
       .digest("base64url");
   let failures: number[] = [];
@@ -46,89 +51,130 @@ export function createAuth(options: {
     res.setHeader("Cache-Control", "no-store");
     res.end(page(message));
   };
-  const valid = (req: IncomingMessage) => {
+  const valid = (
+    req: IncomingMessage,
+    passcodes: readonly Passcode[],
+  ): Visitor | undefined => {
     const token = (req.headers.cookie ?? "")
       .split(";")
       .map((s) => s.trim())
       .find((s) => s.startsWith(`${cookieName}=`))
       ?.slice(cookieName.length + 1);
-    if (!token) return false;
-    const [expiry, signature, extra] = token.split(".");
+    if (!token || token.length > 2048) return;
+    const [payload, signature, extra] = token.split(".");
     if (
-      !expiry ||
+      !payload ||
       !signature ||
       !/^[A-Za-z0-9_-]{43}$/.test(signature) ||
-      extra !== undefined ||
-      !/^\d+$/.test(expiry)
+      extra !== undefined
     )
-      return false;
+      return;
+    let session: { expiry: number; channel: string; visitor: string };
+    try {
+      session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    } catch {
+      return;
+    }
+    if (
+      !session ||
+      !Number.isSafeInteger(session.expiry) ||
+      typeof session.channel !== "string" ||
+      typeof session.visitor !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(session.visitor)
+    )
+      return;
     const seconds = Math.floor(now() / 1000);
-    if (Number(expiry) <= seconds || Number(expiry) > seconds + lifetime)
-      return false;
-    const expected = sign(expiry);
-    return (
-      signature.length === expected.length &&
-      timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    if (session.expiry <= seconds || session.expiry > seconds + lifetime)
+      return;
+    const passcode = passcodes.find(
+      (p) => p.enabled && p.label === session.channel,
     );
+    if (
+      !passcode ||
+      !timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(sign(payload, passcode.code)),
+      )
+    )
+      return;
+    return { channel: session.channel, visitor: session.visitor };
   };
   return async (
     req: IncomingMessage,
     res: ServerResponse,
     path: string,
-  ): Promise<boolean> => {
+  ): Promise<Visitor | undefined> => {
+    const passcodes = await readPasscodes(options.root);
+    const failure = async (reason: string) =>
+      options.analytics.record({ type: "auth.failure", reason });
     if (path === "/auth/login" && req.method === "POST") {
       if (
         (req.headers.origin && req.headers.origin !== options.origin) ||
         req.headers["sec-fetch-site"] === "cross-site"
       ) {
+        await failure("cross-site");
         show(res, 403, "请求来源不符。");
-        return false;
+        return;
       }
       if (
         !req.headers["content-type"]?.startsWith(
           "application/x-www-form-urlencoded",
         )
       ) {
+        await failure("invalid-form");
         show(res, 400, "请使用口令表单。");
-        return false;
+        return;
       }
       let body = "";
       for await (const chunk of req) {
         body += chunk.toString();
         if (Buffer.byteLength(body) > 4096) {
+          await failure("too-large");
           show(res, 413, "口令过长。");
-          return false;
+          return;
         }
       }
       failures = failures.filter((t) => t > now() - 60000);
       if (failures.length >= 5) {
+        await failure("throttled");
         res.setHeader("Retry-After", "60");
         show(res, 429, "尝试过多，请一分钟后再试。");
-        return false;
+        return;
       }
-      if (
-        !timingSafeEqual(
-          digest(new URLSearchParams(body).get("password") ?? ""),
-          digest(options.password),
-        )
-      ) {
+      const candidate = digest(new URLSearchParams(body).get("password") ?? "");
+      const passcode = passcodes.find(
+        (p) => p.enabled && timingSafeEqual(candidate, digest(p.code)),
+      );
+      if (!passcode) {
         failures.push(now());
+        await failure("invalid-code");
         show(res, 401, "口令不对。");
-        return false;
+        return;
       }
       failures = [];
-      const expiry = String(Math.floor(now() / 1000) + lifetime);
+      const identity = {
+        channel: passcode.label,
+        visitor: valid(req, passcodes)?.visitor ?? randomUUID(),
+      };
+      await options.analytics.record({ type: "auth.login", ...identity });
+      const payload = Buffer.from(
+        JSON.stringify({
+          ...identity,
+          expiry: Math.floor(now() / 1000) + lifetime,
+        }),
+      ).toString("base64url");
       res.setHeader(
         "Set-Cookie",
-        `${cookieName}=${expiry}.${sign(expiry)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lifetime}${options.origin.startsWith("https:") ? "; Secure" : ""}`,
+        `${cookieName}=${payload}.${sign(payload, passcode.code)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lifetime}${options.origin.startsWith("https:") ? "; Secure" : ""}`,
       );
       res.setHeader("Cache-Control", "no-store");
       res.writeHead(303, { Location: "/" });
       res.end();
-      return false;
+      return;
     }
-    if (valid(req)) return true;
+    const identity = valid(req, passcodes);
+    if (identity) return identity;
     show(res, 401);
-    return false;
+    return;
   };
 }

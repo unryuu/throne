@@ -1,3 +1,4 @@
+import type { Visitor } from "./passcodes.ts";
 import { runsDirectory } from "@throne/agent-runtime/live";
 import { loadRoutineEntries } from "./routine-library.ts";
 import { cachedCall, fingerprint } from "@throne/agent-runtime/live";
@@ -36,7 +37,18 @@ export type CourtSnapshot = {
   openingPackId?: string;
   busy?: readonly string[];
 };
+export type CourtOperation = "create" | "rescript" | "act" | "retry";
+type RunTracking = Visitor & { readonly callOffset: number };
+export type CourtLifecycle = {
+  readonly beforeCreate: (id: string, identity: Visitor) => Promise<void>;
+  readonly saved: (
+    saved: SavedCourtRun,
+    operation: CourtOperation,
+    day: number,
+  ) => Promise<void>;
+};
 export type SavedCourtRun = {
+  analytics?: RunTracking;
   version: 1;
   id: string;
   locale: Locale;
@@ -52,6 +64,7 @@ export type CourtReview = {
   calls: LiveCallTrace[];
 };
 type Entry = {
+  analytics?: RunTracking;
   id: string;
   locale: Locale;
   session: CourtSession;
@@ -81,6 +94,7 @@ export class CourtService {
     // THRONE_NPC_MODE=form keeps the one-shot reply for comparison runs.
     readonly modelFactory?: CourtModelFactory,
     readonly modelIdentity?: string,
+    readonly lifecycle?: CourtLifecycle,
   ) {}
 
   private path(id: string): string {
@@ -164,6 +178,7 @@ export class CourtService {
     locale: Locale,
     settings: Partial<CourtSettings> = {},
     options: {
+      attribution?: Visitor;
       seed?: string;
       pack?: OpeningPack;
       excludePackIds?: readonly string[];
@@ -193,6 +208,8 @@ export class CourtService {
     )
       throw new Error("Opening pack settings mismatch");
     const id = randomUUID();
+    if (options.attribution)
+      await this.lifecycle?.beforeCreate(id, options.attribution);
     const busy = new Set<string>();
     this.progress.set(options.operationId ?? id, busy);
     this.progress.set(id, busy);
@@ -215,6 +232,9 @@ export class CourtService {
       },
     });
     const entry: Entry = {
+      ...(options.attribution
+        ? { analytics: { ...options.attribution, callOffset: 0 } }
+        : {}),
       id,
       locale,
       session,
@@ -225,7 +245,7 @@ export class CourtService {
       busy,
     };
     this.entries.set(id, entry);
-    await this.save(entry);
+    await this.save(entry, "create");
     return this.snapshot(entry);
   }
 
@@ -236,6 +256,7 @@ export class CourtService {
   async submit(
     id: string,
     submission: RescriptSubmission,
+    attribution?: Visitor,
   ): Promise<CourtSnapshot> {
     const entry = await this.load(id);
     if (entry.submitted.has(submission.audienceId))
@@ -245,10 +266,12 @@ export class CourtService {
     const view = entry.session.view;
     if (view.audience?.id !== submission.audienceId)
       throw new Error("This audience is not open");
+    this.attribute(entry, attribution);
     entry.submitted.add(submission.audienceId);
     return this.execute(
       entry,
       () => entry.session.submit(submission),
+      "rescript",
       () => entry.submitted.delete(submission.audienceId),
     );
   }
@@ -257,19 +280,26 @@ export class CourtService {
     id: string,
     audienceId: string,
     action: AudienceAction,
+    attribution?: Visitor,
   ): Promise<CourtSnapshot> {
     const entry = await this.load(id);
     if (entry.pending || entry.status !== "waiting")
       throw new Error("This audience is not open");
-    return this.execute(entry, () => entry.session.act(audienceId, action));
+    this.attribute(entry, attribution);
+    return this.execute(
+      entry,
+      () => entry.session.act(audienceId, action),
+      "act",
+    );
   }
 
-  async retry(id: string): Promise<CourtSnapshot> {
+  async retry(id: string, attribution?: Visitor): Promise<CourtSnapshot> {
     const entry = await this.load(id);
     if (entry.pending) return entry.pending;
     if (entry.status !== "failed")
       throw new Error("Only a failed step can be retried");
-    return this.execute(entry, () => entry.session.retry());
+    this.attribute(entry, attribution);
+    return this.execute(entry, () => entry.session.retry(), "retry");
   }
 
   async review(id: string): Promise<CourtReview> {
@@ -304,6 +334,17 @@ export class CourtService {
     ) as SavedCourtRun;
     if (saved.version !== 1 || saved.id !== id || !Array.isArray(saved.records))
       throw new Error("Unsupported or damaged court record");
+    if (
+      saved.analytics &&
+      (typeof saved.analytics.channel !== "string" ||
+        !saved.analytics.channel ||
+        typeof saved.analytics.visitor !== "string" ||
+        !saved.analytics.visitor ||
+        !Number.isSafeInteger(saved.analytics.callOffset) ||
+        saved.analytics.callOffset < 0 ||
+        saved.analytics.callOffset > saved.calls.length)
+    )
+      throw new Error("Invalid analytics attribution in court record");
     return saved;
   }
 
@@ -324,6 +365,7 @@ export class CourtService {
     });
     const phase = session.state.phase;
     const entry: Entry = {
+      ...(saved.analytics ? { analytics: saved.analytics } : {}),
       id,
       locale: saved.locale,
       session,
@@ -343,9 +385,15 @@ export class CourtService {
     return entry;
   }
 
+  private attribute(entry: Entry, attribution?: Visitor) {
+    if (!entry.analytics && attribution)
+      entry.analytics = { ...attribution, callOffset: entry.calls.length };
+  }
+
   private execute(
     entry: Entry,
     run: () => Promise<void>,
+    operation: CourtOperation,
     onFailure?: () => void,
   ): Promise<CourtSnapshot> {
     entry.status = "running";
@@ -362,9 +410,9 @@ export class CourtService {
           onFailure?.();
         }
       } finally {
-        await this.save(entry).catch((error: unknown) => {
+        await this.save(entry, operation).catch((error: unknown) => {
           entry.status = "failed";
-          entry.error = `Could not save run: ${String(error)}`;
+          entry.error = `Could not persist run or analytics: ${String(error)}`;
         });
         delete entry.pending;
       }
@@ -373,8 +421,9 @@ export class CourtService {
     return entry.pending;
   }
 
-  private async save(entry: Entry): Promise<void> {
+  private async save(entry: Entry, operation: CourtOperation): Promise<void> {
     const saved: SavedCourtRun = {
+      ...(entry.analytics ? { analytics: entry.analytics } : {}),
       version: 1,
       id: entry.id,
       locale: entry.locale,
@@ -388,6 +437,11 @@ export class CourtService {
     await mkdir(join(runsDirectory(this.root), "court"), { recursive: true });
     await writeFile(path + ".tmp", JSON.stringify(saved), { mode: 0o600 });
     await rename(path + ".tmp", path);
+    await this.lifecycle?.saved(
+      saved,
+      operation,
+      Math.floor(entry.session.view.time / 12),
+    );
   }
 
   private snapshot(entry: Entry): CourtSnapshot {

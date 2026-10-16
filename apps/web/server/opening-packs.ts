@@ -1,3 +1,4 @@
+import { estimateCost } from "./model-cost.ts";
 import { runsDirectory } from "@throne/agent-runtime/live";
 import { loadRoutineEntries } from "./routine-library.ts";
 import { randomUUID } from "node:crypto";
@@ -105,9 +106,7 @@ export function usageReport(calls: readonly LiveCallTrace[]) {
     inputTokens: input,
     cacheReadTokens: cachedInput,
     outputTokens: output,
-    estimatedUsdOffPeak:
-      (input * 0.15 + cachedInput * 0.003 + output * 0.6) / 1e6,
-    estimatedUsdPeak: (input * 0.3 + cachedInput * 0.006 + output * 1.2) / 1e6,
+    ...estimateCost(input, cachedInput, output),
     pricingDate: "2026-10-15",
     pricingSource: "https://api-docs.deepseek.com/quick_start/pricing/",
   };

@@ -1,8 +1,11 @@
+import { Analytics, analyticsPath, readAnalytics } from "./analytics.ts";
+import { readPasscodes } from "./passcodes.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { request as httpRequest, type Server } from "node:http";
+import { createServer, type Server } from "node:http";
+import { requestInProcess } from "./http-test.ts";
 import { createServer as createViteServer } from "vite";
 import { createStandaloneServer } from "./standalone.ts";
 import { readAuthSecrets } from "./standalone-auth.ts";
@@ -12,60 +15,24 @@ import { saveOpeningPack, listOpeningPacks } from "./opening-pack-store.ts";
 import { courtSettingsSchema } from "@throne/court";
 import { cachedCall, runsDirectory } from "@throne/agent-runtime/live";
 
-async function fetchHttp(
-  url: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(
-      url,
-      {
-        method: init.method ?? "GET",
-        headers: Object.fromEntries(new Headers(init.headers)),
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () =>
-          resolve(
-            new Response(new Uint8Array(Buffer.concat(chunks)), {
-              status: res.statusCode!,
-              headers: Object.fromEntries(
-                Object.entries(res.headers)
-                  .filter(([, value]) => value !== undefined)
-                  .map(([key, value]) => [
-                    key,
-                    Array.isArray(value) ? value.join(", ") : value!,
-                  ]),
-              ),
-            }),
-          ),
-        );
-      },
-    );
-    req.on("error", reject);
-    req.end(init.body?.toString());
-  });
+const servers = new Map<string, Server>();
+async function fetchHttp(url: string, init: RequestInit = {}) {
+  const server = servers.get(new URL(url).origin);
+  if (!server) throw new Error("No test server mounted");
+  return requestInProcess(server, url, init);
 }
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((fn) => fn()));
+  servers.clear();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
-async function listen(server: Server) {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  cleanup.push(
-    () =>
-      new Promise<void>((resolve) => {
-        server.close(() => resolve());
-        server.closeAllConnections();
-      }),
-  );
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("No port");
-  return `http://127.0.0.1:${address.port}`;
+async function mount(server: Server) {
+  const origin = `http://127.0.0.1:${4100 + servers.size}`;
+  servers.set(origin, server);
+  return origin;
 }
 async function setup(secure = false) {
   const root = await mkdtemp(join(tmpdir(), "standalone-"));
@@ -73,21 +40,30 @@ async function setup(secure = false) {
   await mkdir(dist, { recursive: true });
   await writeFile(join(dist, "index.html"), "legacy index");
   await writeFile(join(dist, "app.js"), "asset");
-  const court = new CourtService(root);
+  await mkdir(join(root, "secret"));
+  await writeFile(
+    join(root, "secret/passcodes.json"),
+    JSON.stringify([{ code: "test-password", label: "测试", enabled: true }]),
+  );
+  let time = Date.now();
+  const court = new CourtService(
+    root,
+    undefined,
+    undefined,
+    new Analytics(root, () => time),
+  );
   const get = vi
     .spyOn(court, "get")
     .mockResolvedValue({ id: "saved", status: "waiting" } as never);
-  let time = Date.now();
   const origin = `${secure ? "https" : "http"}://game.example`;
   const config = {
     root,
-    password: "test-password",
     signingKey: "s".repeat(32),
     origin,
     court,
     now: () => time,
   };
-  const url = await listen(createStandaloneServer(config));
+  const url = await mount(createStandaloneServer(config));
   const request = (path: string, init: RequestInit = {}) =>
     fetchHttp(url + path, {
       ...init,
@@ -182,17 +158,18 @@ describe("standalone boundary", () => {
       ).status,
     ).toBe(403);
     expect(retry).toHaveBeenCalledOnce();
-    const rotated = await listen(
-      createStandaloneServer({ ...s.config, password: "changed" }),
+    await writeFile(
+      join(s.root, "secret/passcodes.json"),
+      JSON.stringify([{ code: "changed", label: "测试", enabled: true }]),
     );
-    expect(
-      (
-        await fetchHttp(rotated + "/", {
-          headers: { Host: "game.example", Cookie: cookie },
-        })
-      ).status,
-    ).toBe(401);
-    const restarted = await listen(createStandaloneServer(s.config));
+    expect((await s.request("/", { headers: { Cookie: cookie } })).status).toBe(
+      401,
+    );
+    await writeFile(
+      join(s.root, "secret/passcodes.json"),
+      JSON.stringify([{ code: "test-password", label: "测试", enabled: true }]),
+    );
+    const restarted = await mount(createStandaloneServer(s.config));
     expect(
       (
         await fetchHttp(restarted + "/", {
@@ -271,13 +248,13 @@ describe("standalone boundary", () => {
     const root = await mkdtemp(join(tmpdir(), "secrets-"));
     await expect(readAuthSecrets(root)).rejects.toThrow();
     await mkdir(join(root, "secret"));
-    await writeFile(join(root, "secret/password.txt"), "from-file\n");
     await writeFile(join(root, "secret/cookie-secret.txt"), "k".repeat(32));
-    expect((await readAuthSecrets(root)).password).toBe("from-file");
-    vi.stubEnv("THRONE_PASSWORD", "from-env");
-    expect((await readAuthSecrets(root)).password).toBe("from-env");
-    vi.stubEnv("THRONE_PASSWORD", "");
+    expect((await readAuthSecrets(root)).signingKey).toBe("k".repeat(32));
+    vi.stubEnv("THRONE_COOKIE_SECRET", "from-env");
+    expect((await readAuthSecrets(root)).signingKey).toBe("from-env");
+    vi.stubEnv("THRONE_COOKIE_SECRET", "");
     await expect(readAuthSecrets(root)).rejects.toThrow("empty");
+    await expect(readPasscodes(root)).rejects.toThrow("Cannot read");
   });
 });
 
@@ -293,13 +270,14 @@ it("uses the same court routes in Vite while retaining localhost and local POST 
     configFile: false,
     root,
     plugins: [livePlugin(root)],
-    server: { host: "127.0.0.1", port: 0, allowedHosts: true },
+    server: { middlewareMode: true, hmr: false, ws: false, allowedHosts: true },
   });
   cleanup.push(() => vite.close());
-  await vite.listen();
-  const address = vite.httpServer!.address();
-  if (!address || typeof address === "string") throw new Error("No port");
-  const base = `http://127.0.0.1:${address.port}`;
+  const base = await mount(
+    createServer((req, res) =>
+      vite.middlewares(req, res, () => res.end("Not found")),
+    ),
+  );
   expect(
     await (await fetchHttp(base + "/api/court/saved?test=1")).json(),
   ).toEqual({
@@ -397,4 +375,90 @@ it("stores court saves and opening packs under the configured persistent directo
   expect(runsDirectory(root)).toBe(data);
   vi.stubEnv("THRONE_RUNS_DIR", "relative-data");
   expect(runsDirectory(root)).toBe(join(root, "relative-data"));
+});
+
+it("hot-reloads channel codes, signs visitor identity, revokes disabled cookies and logs without secrets", async () => {
+  const s = await setup();
+  const codes = [
+    { code: "alpha-password", label: "朋友圈", enabled: true },
+    { code: "beta-password", label: "小红书", enabled: true },
+  ];
+  const path = join(s.root, "secret/passcodes.json");
+  await writeFile(path, JSON.stringify(codes));
+  const first = (await s.login("alpha-password")).headers
+    .get("set-cookie")!
+    .split(";")[0]!;
+  const second = (await s.login("beta-password")).headers
+    .get("set-cookie")!
+    .split(";")[0]!;
+  const decode = (cookie: string) =>
+    JSON.parse(
+      Buffer.from(cookie.split("=")[1]!.split(".")[0]!, "base64url").toString(),
+    );
+  expect(decode(first)).toMatchObject({ channel: "朋友圈" });
+  expect(decode(second)).toMatchObject({ channel: "小红书" });
+  expect(decode(first).visitor).not.toBe(decode(second).visitor);
+  const again = await s.request("/auth/login", {
+    method: "POST",
+    headers: {
+      Cookie: first,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "password=alpha-password",
+  });
+  expect(decode(again.headers.get("set-cookie")!.split(";")[0]!).visitor).toBe(
+    decode(first).visitor,
+  );
+  await writeFile(
+    path,
+    JSON.stringify([{ ...codes[0], enabled: false }, codes[1]]),
+  );
+  expect((await s.request("/", { headers: { Cookie: first } })).status).toBe(
+    401,
+  );
+  expect((await s.request("/", { headers: { Cookie: second } })).status).toBe(
+    200,
+  );
+  expect((await s.login("alpha-password")).status).toBe(401);
+  await writeFile(
+    path,
+    JSON.stringify([{ ...codes[0], code: "new-password" }, codes[1]]),
+  );
+  expect((await s.request("/", { headers: { Cookie: first } })).status).toBe(
+    401,
+  );
+  const events = await readAnalytics(analyticsPath(s.root));
+  expect(events.filter((e) => e.type === "auth.login")).toHaveLength(3);
+  expect(events.filter((e) => e.type === "auth.failure")).toEqual([
+    expect.objectContaining({ reason: "invalid-code" }),
+  ]);
+  const raw = await readFile(analyticsPath(s.root), "utf8");
+  for (const secret of ["alpha-password", "beta-password", "127.0.0.1"])
+    expect(raw).not.toContain(secret);
+  await writeFile(path, "{broken");
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  expect((await s.request("/", { headers: { Cookie: second } })).status).toBe(
+    500,
+  );
+  expect(errors).toHaveBeenCalled();
+});
+
+it("returns the channel budget error before any model call at the opening API", async () => {
+  const s = await setup();
+  await writeFile(
+    join(s.root, "secret/passcodes.json"),
+    JSON.stringify([
+      { code: "test-password", label: "测试", enabled: true, maxRunsPerDay: 0 },
+    ]),
+  );
+  const cookie = (await s.login()).headers.get("set-cookie")!.split(";")[0]!;
+  const model = vi.spyOn(s.config.court, "model");
+  const response = await s.request("/api/court", {
+    method: "POST",
+    headers: { Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ locale: "zh-CN" }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "今日国库已空" });
+  expect(model).not.toHaveBeenCalled();
 });

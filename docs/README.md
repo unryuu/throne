@@ -7,7 +7,7 @@
 - [SPEC](SPEC.md)：模拟原则和架构边界。
 - [DESIGN](DESIGN.md)：玩法意图，首次参与必读，以后按相关章节查阅。
 - [architecture](architecture/overview.md)：架构与仍生效的决定；任命机制见 ADR 0003。
-- [作者自用部署](deployment.md)：独立 Node 服务、口令、持久目录与 nginx/systemd。
+- [渠道口令部署](deployment.md)：独立 Node 服务、渠道限额与统计、持久目录及 nginx/systemd。
 - [providers](providers.md)：接入模型时查阅。
 - [等待时间与用量](performance.md)：优化耗时、token 或缓存命中前必读，记着试过和证伪的办法。
 - [真实 NPC 接入](architecture/0004-live-npc.md)：本地服务、调用边界、失败恢复与持久回放。

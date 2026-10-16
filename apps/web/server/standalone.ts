@@ -1,3 +1,5 @@
+import { Analytics } from "./analytics.ts";
+import { readPasscodes } from "./passcodes.ts";
 import { createServer } from "node:http";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
@@ -24,7 +26,6 @@ const missing = (error: unknown) =>
 
 export function createStandaloneServer(options: {
   readonly root: string;
-  readonly password: string;
   readonly signingKey: string;
   readonly origin: string;
   readonly court?: CourtService;
@@ -38,9 +39,11 @@ export function createStandaloneServer(options: {
     throw new Error(
       "THRONE_PUBLIC_ORIGIN must be an http(s) origin without a trailing slash",
     );
-  const authenticate = createAuth(options);
+  const analytics = new Analytics(options.root, options.now);
+  const authenticate = createAuth({ ...options, analytics });
   const court = createCourtHandler(
-    options.court ?? new CourtService(options.root),
+    options.court ??
+      new CourtService(options.root, undefined, undefined, analytics),
   );
   const dist = resolve(options.root, "apps/web/dist");
   const server = createServer(async (req, res) => {
@@ -58,7 +61,8 @@ export function createStandaloneServer(options: {
         return;
       }
       const path = new URL(req.url ?? "/", origin).pathname;
-      if (!(await authenticate(req, res, path))) return;
+      const identity = await authenticate(req, res, path);
+      if (!identity) return;
       if (
         (req.headers.origin && req.headers.origin !== origin.origin) ||
         req.headers["sec-fetch-site"] === "cross-site"
@@ -67,7 +71,7 @@ export function createStandaloneServer(options: {
         return;
       }
       if (path === "/api/court" || path.startsWith("/api/court/")) {
-        await court(req, res, path.slice("/api/court".length));
+        await court(req, res, path.slice("/api/court".length), identity);
         return;
       }
       if (path.startsWith("/api/")) {
@@ -133,6 +137,7 @@ export async function startStandalone() {
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("PORT must be 1–65535");
   runsDirectory(root);
+  await readPasscodes(root);
   const server = createStandaloneServer({
     root,
     ...(await readAuthSecrets(root)),

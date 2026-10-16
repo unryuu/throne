@@ -1,5 +1,7 @@
 # 当前功能
 
+实现完成，待环境验收：[渠道口令与统计](active/channel-analytics.md)。
+
 已完成：[手机御案前端](archive/mobile-desk.md)。
 
 已完成：[独立部署服务](archive/standalone-server.md)。
