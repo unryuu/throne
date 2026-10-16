@@ -1,4 +1,4 @@
-# HANDOFF：手机能玩，只差部署
+# HANDOFF：已部署到 1566.unryuu.top，等作者试玩
 
 写于 2026-10-16，分支 `feat/jiajing-court`（已推送，未合 `main`）。先读 STATUS.md 最后一段和 [docs/deployment.md](docs/deployment.md)。
 
@@ -11,18 +11,14 @@
 
 ## 待用户
 
-1. **批准下面的 vps-02 改动清单**（台账规矩：改动机器要先问）。xray 切换监听端口时，代理会断几分钟。
-2. 部署完，用“作者自用”口令在手机上玩一局，这是作者的第一次亲自试玩。口令在 `secret/passcodes.json`，不要贴进聊天。
-3. 什么时候合进 `main`（合进去会触发观战页部署）。
+1. 用“作者自用”口令在手机上玩一局，这是作者的第一次亲自试玩。口令在 `secret/passcodes.json`，不要贴进聊天。
+2. 什么时候合进 `main`（合进去会触发观战页部署）。
 
-## vps-02 改动清单（巡检已做：CentOS 9，SELinux 关，nginx 在 80 端口服务 hk.purestretch.cn，xray 占 443，没有 Node 和 certbot，DNS 已指向本机）
+## 下一步
 
-1. 安装 Node 24、`nginx-mod-stream`、EPEL 和 certbot。
-2. 建 `throne` 用户。代码用 rsync 传到 `/opt/throne`（排除 node_modules、runs）；`secret/` 只带 deepseek.txt、passcodes.json、cookie-secret.txt，权限 600。持久目录 `/var/lib/throne/runs`，带上 `runs/cache/`（开局包和调用缓存）。然后 `pnpm install --frozen-lockfile` 并 build。
-3. 装 systemd 单元 `throne.service`（照 deployment.md），环境文件 `/etc/throne.env`：PORT=4173，THRONE_PUBLIC_ORIGIN=https://1566.unryuu.top，THRONE_RUNS_DIR。
-4. certbot 通过 80 端口签 `1566.unryuu.top`。
-5. xray 的监听从 `0.0.0.0:443` 改到 `127.0.0.1:10443`。nginx 加 stream：443 端口做 ssl_preread，SNI 是 1566 的转到 127.0.0.1:8443（http ssl server，反代 4173，超时照 deployment.md），其余转到 10443。改之前把配置备份成 `.bak-时间戳`。
-6. 在 Mac 上 curl 一遍（应返回 401 口令页），再请用户测一下翻墙还能不能用。最后更新 VPS 台账：vps-02 档案里写的“只有 22 在监听”已经过时。
+- 开局包（一组浅白）建完后：补跑 `--verify`，再把 `runs/cache/` 传到服务器的 `/var/lib/throne/runs/cache/`（权限归 throne）。
+- 部署已完成，台账已更新。更新流程见 VPS 台账 vps-02 档案的 throne 一节；配置文件在 `deploy/vps-02/`（nginx 1.20 要用 `listen ... ssl http2`，不支持 `http2 on`）。
+- 试玩反馈之后：滑动手势，以及发小红书前要做的全站花费上限。
 
 ## 坑
 

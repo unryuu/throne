@@ -10,7 +10,7 @@ Group=throne
 WorkingDirectory=/opt/throne
 Environment=NODE_ENV=production
 EnvironmentFile=/etc/throne.env
-ExecStart=/usr/bin/node /opt/throne/node_modules/tsx/dist/cli.mjs /opt/throne/apps/web/server/standalone.ts
+ExecStart=/opt/node/bin/node /opt/throne/node_modules/tsx/dist/cli.mjs /opt/throne/apps/web/server/standalone.ts
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=1800
