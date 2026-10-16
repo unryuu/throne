@@ -488,6 +488,12 @@ function RulerItem({
         <article className="talk">
           <span className="tag">深思 · {entry.subject}</span>
           <p>{entry.text}</p>
+          {entry.authorNote ? (
+            <aside>
+              <span className="tag">游戏作者注</span>
+              <p>{entry.authorNote}</p>
+            </aside>
+          ) : null}
         </article>
       );
     case "conversation":
@@ -549,7 +555,9 @@ function Paper({ paper, from }: { paper: ChroniclePaper; from: string }) {
           {paper.rescript.disposition === "follow_draft" ? (
             <span className="vermilion-text">依拟</span>
           ) : paper.rescript.disposition === "hold" ? (
-            <span className="vermilion-text">留中不发</span>
+            <span className="vermilion-text">
+              {paper.hasDraft === false ? "已阅" : "留中不发"}
+            </span>
           ) : (
             <span className="vermilion-text">
               {paper.rescript.text ||

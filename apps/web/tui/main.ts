@@ -24,17 +24,14 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const demo = process.argv.includes("--demo");
 const serviceRoot = demo ? await mkdtemp(join(tmpdir(), "throne-demo-")) : root;
 let calls = 0;
-const base = new CourtService(serviceRoot);
-const service = new CourtService(serviceRoot, (trace) =>
+const service = new CourtService(
+  serviceRoot,
   demo
-    ? async (r) => {
+    ? () => async (r) => {
         calls++;
         return demoModel(r);
       }
-    : base.modelFactory((t) => {
-        calls++;
-        trace(t);
-      }),
+    : undefined,
 );
 let state: State = initialState(demo ? [] : await listRuns(root));
 let terminal: Terminal | undefined;
@@ -46,13 +43,7 @@ let spectator: ChildProcess | undefined;
 let pulse = 0;
 let animation:
   { documentId: string; text: string; visible: number } | undefined;
-const atmosphere = [
-  "内阁值房灯还亮着……",
-  "廊下的风吹动了帘角……",
-  "远处传来更夫的梆声……",
-  "小内侍换过一盏热茶……",
-  "西苑檐前落下几声鸟鸣……",
-];
+
 const draw = () => {
   let shown = state;
   if (animation && state.snapshot?.view.audience) {
@@ -93,8 +84,8 @@ const draw = () => {
       shown,
       process.stdout.columns || 80,
       process.stdout.rows || 24,
-      busy
-        ? { text: atmosphere[pulse % atmosphere.length]!, calls }
+      busy && service.busyMessages().length
+        ? { text: service.busyMessages().join(" "), calls }
         : undefined,
     ),
   );

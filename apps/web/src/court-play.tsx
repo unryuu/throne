@@ -1,5 +1,6 @@
+import { imperialPresets } from "@throne/court";
 import { courtGlossary } from "@throne/localization";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { Locale, MessageKey, Translator } from "@throne/localization";
 import {
   formatCourtTime,
@@ -62,7 +63,10 @@ type Special = EdictDraft & { text: string };
 function defaultParams(kind: EdictKind, view: CourtRulerView): JsonObject {
   switch (kind) {
     case "request_memorial":
-      return { actorId: view.options.questionable[0]?.id ?? "", question: "" };
+      return {
+        actorId: view.options.questionable[0]?.id ?? "",
+        question: imperialPresets.question[0],
+      };
     case "order_inquiry":
       return { countyId: view.options.counties[0]!.id, agent: "jinyiwei" };
     case "reprimand":
@@ -86,7 +90,7 @@ function initialChoice(d: RulerDocumentView): Choice {
 
 export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const [settings, setSettings] = useState<CourtSettings>({
-    register: "classical",
+    register: "plain",
     summaries: true,
   });
   const [snapshot, setSnapshot] = useState<CourtSnapshot>();
@@ -95,10 +99,32 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   const [specials, setSpecials] = useState<Special[]>([]);
   const [review, setReview] = useState<CourtReview>();
   const [busy, setBusy] = useState(false);
+  const [operationId, setOperationId] = useState<string>();
+  const [busyMessages, setBusyMessages] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!busy) {
+      setBusyMessages([]);
+      return;
+    }
+    const id = operationId ?? snapshot?.id;
+    if (!id) return;
+    let active = true;
+    const timer = setInterval(() => {
+      void request<{ busy: readonly string[] }>(`/progress/${id}`)
+        .then((result) => {
+          if (active) setBusyMessages(result.busy);
+        })
+        .catch(() => {});
+    }, 500);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [busy, operationId, snapshot?.id]);
   const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string>();
   const [verified, setVerified] = useState(false);
-  const [talk, setTalk] = useState("");
+  const [talk, setTalk] = useState<string>(imperialPresets.talk[0]);
   const [standing, setStanding] = useState<CourtRulerView["standing"]>({
     mode: "personal",
     instruction: "",
@@ -134,7 +160,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
     setChoices({});
     setExpanded(new Set());
     setSpecials([]);
-    setTalk("");
+    setTalk(imperialPresets.talk[0]);
     setSeclusion(1);
     setStanding(snapshot.view.standing);
   }, [snapshot?.id, audienceId]);
@@ -173,12 +199,40 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      setOperationId(undefined);
       setBusy(false);
     }
   };
   const start = () =>
     perform(async () => {
-      const next = await request<CourtSnapshot>("", { locale, settings });
+      const operation = crypto.randomUUID();
+      setOperationId(operation);
+      let excluded: string[] = [];
+      try {
+        const value: unknown = JSON.parse(
+          localStorage.getItem("throne-opening-packs") ?? "[]",
+        );
+        if (Array.isArray(value) && value.every((v) => typeof v === "string"))
+          excluded = value;
+      } catch {
+        /* Storage can be disabled. */
+      }
+      const next = await request<CourtSnapshot>("", {
+        locale,
+        settings,
+        operationId: operation,
+        excludePackIds: excluded,
+      });
+      setOperationId(undefined);
+      if (next.openingPackId)
+        try {
+          localStorage.setItem(
+            "throne-opening-packs",
+            JSON.stringify([...new Set([...excluded, next.openingPackId])]),
+          );
+        } catch {
+          /* The game still works without browser storage. */
+        }
       setSnapshot(next);
       setReview(undefined);
       setVerified(false);
@@ -233,7 +287,7 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
           action,
         }),
       );
-      if (action.type === "converse") setTalk("");
+      if (action.type === "converse") setTalk(imperialPresets.talk[0]);
     });
   const decline = () =>
     perform(async () => {
@@ -262,6 +316,9 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
   return (
     <div className="court-play">
       <p className="command-copy">{t("court.intro")}</p>
+      {busyMessages.length ? (
+        <p role="status">{busyMessages.join(" ")}</p>
+      ) : null}
       <fieldset disabled={pending} className="court-settings">
         <legend>{t("court.settings")}</legend>
         <label>
@@ -328,14 +385,6 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
               ? ` · ${t("court.secluded", { time: formatCourtTime(view.secludedUntil, locale) })}`
               : ""}
           </p>
-          {snapshot.status === "running" ? (
-            <p role="status" className="court-running">
-              {t("court.running", {
-                time: formatCourtTime(view.time, locale),
-                calls: snapshot.calls,
-              })}
-            </p>
-          ) : null}
           {view.cappedWakes > 0 ? (
             <p role="alert" className="fog-note">
               {t("court.capped", { count: view.cappedWakes })}
@@ -456,6 +505,20 @@ export function CourtPlay({ locale, t }: { locale: Locale; t: Translator }) {
                 ))}
                 {view.audience.roundsLeft > 0 ? (
                   <>
+                    <select
+                      aria-label="召吕芳预设"
+                      value={
+                        imperialPresets.talk.includes(talk as never) ? talk : ""
+                      }
+                      onChange={(e) => setTalk(e.target.value)}
+                    >
+                      {imperialPresets.talk.map((text) => (
+                        <option key={text} value={text}>
+                          {text}
+                        </option>
+                      ))}
+                      <option value="">自己写</option>
+                    </select>
                     <textarea
                       value={talk}
                       maxLength={400}
@@ -723,7 +786,7 @@ export function DeskDocument({
   const dispositions = [
     ...(doc.draft || doc.hasDraft ? (["follow_draft"] as const) : []),
     "custom" as const,
-    "hold" as const,
+    ...(doc.draft || doc.hasDraft ? ["hold" as const] : []),
   ];
   const customKinds: EdictKind[] = [
     "acknowledge",
@@ -958,10 +1021,18 @@ function DocumentBody({ doc, t }: { doc: RulerDocumentView; t: Translator }) {
       )}
       {doc.gloss ? <p className="fog-note">（{doc.gloss}）</p> : null}
       {doc.ponders?.map((p, i) => (
-        <blockquote className="court-ponder" key={i}>
-          <span>{t("court.ponderResult")}</span>
-          <p>{p.text}</p>
-        </blockquote>
+        <Fragment key={i}>
+          <blockquote className="court-ponder">
+            <span>{t("court.ponderResult")}</span>
+            <p>{p.text}</p>
+          </blockquote>
+          {p.authorNote ? (
+            <aside className="court-author-note">
+              <span>游戏作者注</span>
+              <p>{p.authorNote}</p>
+            </aside>
+          ) : null}
+        </Fragment>
       ))}
       {doc.luBingNote ? (
         <div className="court-oral">
@@ -1043,6 +1114,22 @@ function EdictEditor({
       {value.kind === "request_memorial" ? (
         <label>
           <span>{t("court.question")}</span>
+          <select
+            aria-label="发问预设"
+            value={
+              imperialPresets.question.includes(String(p.question) as never)
+                ? String(p.question)
+                : ""
+            }
+            onChange={(e) => set("question", e.target.value)}
+          >
+            {imperialPresets.question.map((text) => (
+              <option key={text} value={text}>
+                {text}
+              </option>
+            ))}
+            <option value="">自己写</option>
+          </select>
           <textarea
             maxLength={600}
             value={String(p.question ?? "")}
@@ -1162,9 +1249,13 @@ function Archive({
               ) : null}
               {doc.rescript ? (
                 <p className="court-rescript">
-                  {t(
-                    `court.rescript.${doc.rescript.disposition}` as MessageKey,
-                  )}
+                  {doc.rescript.disposition === "hold" &&
+                  !doc.draft &&
+                  !doc.hasDraft
+                    ? "已阅"
+                    : t(
+                        `court.rescript.${doc.rescript.disposition}` as MessageKey,
+                      )}
                   {doc.rescript.text ? `：${doc.rescript.text}` : ""}
                 </p>
               ) : null}

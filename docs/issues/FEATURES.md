@@ -1,5 +1,7 @@
 # 当前功能
 
+实现中：[开局包与调用指纹库](active/opening-packs.md)（不含杂事库）。
+
 已完成：[FEAT-0012 归纳、深思与开局语体](active/ponder-summary-register.md)。
 
 已完成：[分享前启动与小修](archive/share-and-play-2026-10-15.md)。

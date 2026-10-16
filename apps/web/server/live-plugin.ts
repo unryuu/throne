@@ -47,12 +47,40 @@ export function livePlugin(root: string): Plugin {
           let result: unknown;
           if (req.method === "POST") {
             const body = await readLocalJson(req, 65536);
-            if (!id && (body.locale === "zh-CN" || body.locale === "en"))
+            if (!id && (body.locale === "zh-CN" || body.locale === "en")) {
+              if (
+                body.seed !== undefined &&
+                (typeof body.seed !== "string" || !body.seed.trim())
+              )
+                throw new Error("Seed must be a nonempty string");
+              if (
+                body.excludePackIds !== undefined &&
+                (!Array.isArray(body.excludePackIds) ||
+                  !body.excludePackIds.every(
+                    (value) => typeof value === "string",
+                  ))
+              )
+                throw new Error("excludePackIds must be an array of strings");
+              if (
+                body.operationId !== undefined &&
+                typeof body.operationId !== "string"
+              )
+                throw new Error("operationId must be a string");
               result = await court.create(
                 body.locale,
                 courtSettingsSchema.parse(body.settings ?? {}),
+                {
+                  ...(Array.isArray(body.excludePackIds) &&
+                  body.excludePackIds.every((id) => typeof id === "string")
+                    ? { excludePackIds: body.excludePackIds as string[] }
+                    : {}),
+                  ...(typeof body.seed === "string" ? { seed: body.seed } : {}),
+                  ...(typeof body.operationId === "string"
+                    ? { operationId: body.operationId }
+                    : {}),
+                },
               );
-            else if (id && action === "rescript" && body.submission)
+            } else if (id && action === "rescript" && body.submission)
               result = await court.submit(
                 id,
                 body.submission as RescriptSubmission,
@@ -66,7 +94,9 @@ export function livePlugin(root: string): Plugin {
             else if (id && action === "retry") result = await court.retry(id);
             else throw new Error("Invalid court request");
           } else if (req.method === "GET" && id) {
-            if (action === "review") result = await court.review(id);
+            if (id === "progress" && action)
+              result = { busy: court.busyMessages(action) };
+            else if (action === "review") result = await court.review(id);
             else if (action === "replay") result = await court.replay(id);
             else if (!action) result = await court.get(id);
             else throw new Error("Unknown court route");

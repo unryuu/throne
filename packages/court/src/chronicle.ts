@@ -69,6 +69,7 @@ export type RulerEntry =
     }
   | {
       readonly type: "ponder";
+      readonly authorNote?: string;
       readonly at: number;
       readonly subject: string;
       readonly text: string;
@@ -94,6 +95,7 @@ export type ChroniclePaper = {
   readonly revealed: boolean;
   readonly opened?: boolean;
   readonly draft?: string;
+  readonly hasDraft?: boolean;
   readonly direct: boolean;
   readonly luBingNote?: string;
   readonly rescript?: {
@@ -383,6 +385,7 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
         : {}),
       revealed,
       ...(opened && doc.draft ? { draft: doc.draft.text } : {}),
+      hasDraft: Boolean(doc.draft),
       direct: doc.route?.channel === "direct",
       ...(opened && doc.route?.note ? { luBingNote: doc.route.note } : {}),
     };
@@ -467,6 +470,9 @@ export function buildChronicle(source: ChronicleSource): Chronicle {
       case "court.pondered":
         ruler.push({
           type: "ponder",
+          ...(typeof p.authorNote === "string"
+            ? { authorNote: p.authorNote }
+            : {}),
           at,
           subject: docs[String(p.documentId)]?.subject ?? String(p.documentId),
           text: String(p.text),

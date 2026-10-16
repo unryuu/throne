@@ -1,3 +1,5 @@
+import { cachedCall, fingerprint } from "@throne/agent-runtime/live";
+import { chooseOpeningPack, type OpeningPack } from "./opening-pack-store.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -29,6 +31,8 @@ export type CourtSnapshot = {
   view: CourtRulerView;
   error?: string;
   calls: number;
+  openingPackId?: string;
+  busy?: readonly string[];
 };
 export type SavedCourtRun = {
   version: 1;
@@ -54,6 +58,7 @@ type Entry = {
   submitted: Set<string>;
   error?: string;
   pending?: Promise<CourtSnapshot>;
+  busy: Set<string>;
 };
 export type CourtModelFactory = (
   onTrace: (trace: LiveCallTrace) => void,
@@ -61,15 +66,19 @@ export type CourtModelFactory = (
 
 export class CourtService {
   readonly entries = new Map<string, Entry>();
+  readonly progress = new Map<string, Set<string>>();
+  busyMessages(id?: string): readonly string[] {
+    return id
+      ? [...(this.progress.get(id) ?? [])]
+      : [...new Set([...this.progress.values()].flatMap((s) => [...s]))];
+  }
   /** Terminal days read the log as files, so it is never cut short. */
   readonly fullLog = process.env.THRONE_NPC_MODE !== "form";
   constructor(
     readonly root: string,
     // THRONE_NPC_MODE=form keeps the one-shot reply for comparison runs.
-    readonly modelFactory: CourtModelFactory = (trace) =>
-      process.env.THRONE_NPC_MODE === "form"
-        ? createLiveTextModel(root, trace)
-        : createTerminalCourtModel(root, trace),
+    readonly modelFactory?: CourtModelFactory,
+    readonly modelIdentity?: string,
   ) {}
 
   private path(id: string): string {
@@ -77,23 +86,126 @@ export class CourtService {
     return join(this.root, "runs", "court", `${id}.json`);
   }
 
+  model(calls: LiveCallTrace[], busy: Set<string>): CourtModel {
+    const trace = (t: LiveCallTrace) => calls.push(t);
+    const captures = new Map<string, (trace: LiveCallTrace) => void>();
+    const underlying =
+      this.modelFactory?.((t) => captures.get(t.decisionEpisodeId)?.(t)) ??
+      (process.env.THRONE_NPC_MODE === "form"
+        ? createLiveTextModel(this.root, trace)
+        : createTerminalCourtModel(this.root, trace));
+    return async (request) => {
+      const name = request.bureau
+        ? "通政司"
+        : request.summaries
+          ? "归纳书吏"
+          : request.ponder
+            ? "嘉靖"
+            : String(
+                (request.input.self as { name?: string } | undefined)?.name ??
+                  "吕芳",
+              );
+      const key = `${name}正在忙碌……`;
+      const onBusy = (active: boolean) => {
+        if (active) busy.add(key);
+        else busy.delete(key);
+      };
+      if (!this.modelFactory) return underlying({ ...request, onBusy });
+      return cachedCall({
+        root: this.root,
+        episode: request.decisionEpisodeId,
+        onTrace: trace,
+        onBusy,
+        validate: request.validate,
+        request: {
+          mode: "injected",
+          model:
+            this.modelIdentity ?? fingerprint(this.modelFactory.toString()),
+          systemPrompt: request.systemPrompt,
+          prompt: request.prompt,
+          input: request.input,
+        },
+        run: async (emit) => {
+          let recorded: LiveCallTrace | undefined;
+          captures.set(request.decisionEpisodeId, (t) => {
+            recorded = t;
+          });
+          const began = Date.now();
+          let text: string;
+          try {
+            text = await underlying(request);
+          } finally {
+            captures.delete(request.decisionEpisodeId);
+          }
+          emit(
+            recorded ?? {
+              decisionEpisodeId: request.decisionEpisodeId,
+              requestedProvider: "injected",
+              requestedModel: this.modelIdentity ?? "injected",
+              returnedProvider: null,
+              returnedModel: null,
+              thinking: "enabled",
+              reasoningEffort: "high",
+              thinkingObserved: false,
+              durationMs: Date.now() - began,
+              usage: {},
+              status: "succeeded",
+            },
+          );
+          return text;
+        },
+      });
+    };
+  }
+
   async create(
     locale: Locale,
     settings: Partial<CourtSettings> = {},
+    options: {
+      seed?: string;
+      pack?: OpeningPack;
+      excludePackIds?: readonly string[];
+      usePacks?: boolean;
+      operationId?: string;
+    } = {},
   ): Promise<CourtSnapshot> {
     if (this.entries.size >= 50)
       throw new Error(
         "Local session limit reached; restart the development server",
       );
     const preferences = courtSettingsSchema.parse(settings);
+    const pack =
+      options.pack ??
+      (options.seed === undefined && options.usePacks !== false
+        ? await chooseOpeningPack(
+            this.root,
+            preferences,
+            locale,
+            options.excludePackIds,
+          )
+        : undefined);
+    if (
+      pack &&
+      (pack.locale !== locale ||
+        JSON.stringify(pack.settings) !== JSON.stringify(preferences))
+    )
+      throw new Error("Opening pack settings mismatch");
     const id = randomUUID();
+    const busy = new Set<string>();
+    this.progress.set(options.operationId ?? id, busy);
+    this.progress.set(id, busy);
     const calls: LiveCallTrace[] = [];
     let initialError: string | undefined;
     const session = await startCourtSession({
       runId: id,
       settings: preferences,
+      ...(pack
+        ? { seed: pack.seed, openingPackId: pack.id }
+        : options.seed !== undefined
+          ? { seed: options.seed }
+          : {}),
       language: locale,
-      model: this.modelFactory((trace) => calls.push(trace)),
+      model: this.model(calls, busy),
       fullLog: this.fullLog,
       onInitialFailure: (error) => {
         initialError = error instanceof Error ? error.message : String(error);
@@ -107,6 +219,7 @@ export class CourtService {
       status: session.failed ? "failed" : "waiting",
       ...(initialError ? { error: initialError } : {}),
       submitted: new Set(),
+      busy,
     };
     this.entries.set(id, entry);
     await this.save(entry);
@@ -196,10 +309,12 @@ export class CourtService {
     if (existing) return existing;
     const saved = await this.read(id);
     const calls = saved.calls;
+    const busy = new Set<string>();
+    this.progress.set(id, busy);
     const session = await startCourtSession({
       runId: id,
       language: saved.locale,
-      model: this.modelFactory((trace) => calls.push(trace)),
+      model: this.model(calls, busy),
       fullLog: this.fullLog,
       records: saved.records,
     });
@@ -215,6 +330,7 @@ export class CourtService {
           ? "complete"
           : "waiting",
       submitted: new Set(),
+      busy,
       ...(session.failed
         ? { error: saved.error ?? "Interrupted; retry to continue" }
         : {}),
@@ -276,6 +392,10 @@ export class CourtService {
       status: entry.status,
       view: entry.session.view,
       calls: entry.calls.length,
+      busy: [...entry.busy],
+      ...(entry.session.state.openingPackId
+        ? { openingPackId: entry.session.state.openingPackId }
+        : {}),
       ...(entry.error ? { error: entry.error } : {}),
     });
   }

@@ -1146,7 +1146,8 @@ export const zhCN: Record<MessageKey, string> = {
     "旧局剩余精力 {count} / {capacity}。展开和调阅原本仍各花 1 点，沿用开局规则。",
   "court.revealHint": "看吕芳摘要背后的原文；新局免费。",
   "court.hint.follow_draft": "照内阁拟好的办法发出去，不花精力。",
-  "court.hint.hold": "压下这份文书，暂不发命令，不花精力。",
+  "court.hint.hold":
+    "不批不发，搁着不表态；这份文书不再批复，可另发特旨。不花精力。",
   "court.hint.custom": "换成你自己的命令，花 1 点精力。",
   "court.glossary": "名词小抄",
   "court.glossary.follow": "依拟",
@@ -1218,7 +1219,7 @@ export const zhCN: Record<MessageKey, string> = {
   "court.noDraft": "内阁题本，无票拟",
   "court.follow": "依拟",
   "court.custom": "改批",
-  "court.hold": "留中",
+  "court.hold": "留中 — 不批不发，搁着不表态",
   "court.vermilion": "朱批",
   "court.vermilionPlaceholder": "亲笔批语（可不写）",
   "court.disposal": "处置",

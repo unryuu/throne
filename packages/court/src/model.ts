@@ -12,7 +12,7 @@ import {
   bureauPrompt,
   parseBureau,
   parseSummaries,
-  parsePonder,
+  parsePonderResult,
   summaryPrompt,
   ponderPrompt,
 } from "./information.ts";
@@ -288,8 +288,10 @@ function sendDocument(
     });
 }
 
-const nextDocumentId = (state: CourtState, offset = 0) =>
-  `doc-${Object.keys(state.documents).length + offset}`;
+const nextDocumentId = (state: CourtState, source: string, offset = 0) =>
+  state.documentIdVersion === 2
+    ? `doc-${source}-${Object.values(state.documents).filter((d) => d.fromId === source).length + offset}`
+    : `doc-${Object.keys(state.documents).length + offset}`;
 
 function governorId(state: CourtState): string {
   return state.actors[ids.zheng]?.active ? ids.zheng : ids.hu;
@@ -387,7 +389,7 @@ function issueEdict(
     });
   if (edict.kind === "reject" && reply?.id === ids.policyMemorial)
     ctx.commit("policy.updated", { patch: { status: "rejected" } });
-  const id = nextDocumentId(ctx.state);
+  const id = nextDocumentId(ctx.state, ids.ruler);
   if (edict.kind === "order_inquiry" && edict.params.agent === "jinyiwei")
     ctx.later("jinyiwei.arrive", ctx.time + days(8), {
       inquiryId: id,
@@ -1340,7 +1342,7 @@ function applyDecision(
     }
     if (!free) energy -= 1;
     documents.push({
-      id: nextDocumentId(ctx.state, documents.length),
+      id: nextDocumentId(ctx.state, actorId, documents.length),
       kind,
       fromId: actorId,
       toIds: recipients,
@@ -1480,7 +1482,7 @@ function applyDecision(
       if (ctx.state.information) {
         if (decision.reportSubject?.trim())
           sendDocument(ctx, {
-            id: nextDocumentId(ctx.state),
+            id: nextDocumentId(ctx.state, actorId),
             kind: "oral",
             fromId: actorId,
             toIds: [ids.ruler],
@@ -1692,7 +1694,7 @@ async function composeBureau(ctx: Context, options: Options, day: number) {
   });
   for (const report of parseBureau(text, facts))
     sendDocument(ctx, {
-      id: nextDocumentId(ctx.state),
+      id: nextDocumentId(ctx.state, "通政司"),
       kind: "bureau",
       fromId: "通政司",
       toIds: [ids.ruler],
@@ -1753,7 +1755,7 @@ async function handlePonder(
     date: formatCourtTime(ctx.time, "zh-CN"),
     document,
   }) as JsonObject;
-  const text = parsePonder(
+  const ponder = parsePonderResult(
     await options.model({
       decisionEpisodeId: `court:ponder:${documentId}:${ctx.state.documents[documentId]?.ponders?.length ?? 0}`,
       sessionKey: `${options.runId}:ponder`,
@@ -1764,7 +1766,7 @@ async function handlePonder(
     }),
   );
   spendImperial(ctx, 1, "ponder");
-  ctx.commit("court.pondered", { documentId, text });
+  ctx.commit("court.pondered", { documentId, ...ponder });
 }
 
 export function createCourtModel(options: Options): DomainModel<CourtState> {
@@ -1781,6 +1783,9 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
           case "information.begin":
             ctx.commit("information.enabled", {
               decisionBudget: p.decisionBudget ?? imperialRules.decisionBudget,
+              ...(p.seed !== undefined ? { seed: p.seed } : {}),
+              ...(p.documentIdVersion === 2 ? { documentIdVersion: 2 } : {}),
+              ...(p.openingPackId ? { openingPackId: p.openingPackId } : {}),
               ...(p.settings !== undefined
                 ? { settings: courtSettingsSchema.parse(p.settings) }
                 : {}),
@@ -1951,7 +1956,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
             sendDocument(
               ctx,
               {
-                id: nextDocumentId(ctx.state),
+                id: nextDocumentId(ctx.state, ids.jinyiwei),
                 kind: "report",
                 fromId: ids.jinyiwei,
                 toIds: [ids.luBing],
@@ -2068,12 +2073,26 @@ export function reduceCourtState(
     case "court.pondered": {
       const doc = state.documents[String(p.documentId)]!;
       return patchDocument(state, doc.id, {
-        ponders: [...(doc.ponders ?? []), { at: time, text: String(p.text) }],
+        ponders: [
+          ...(doc.ponders ?? []),
+          {
+            at: time,
+            text: String(p.text),
+            ...(typeof p.authorNote === "string"
+              ? { authorNote: p.authorNote }
+              : {}),
+          },
+        ],
       });
     }
     case "information.enabled":
       return {
         ...state,
+        ...(typeof p.seed === "string" ? { seed: p.seed } : {}),
+        ...(p.documentIdVersion === 2 ? { documentIdVersion: 2 as const } : {}),
+        ...(typeof p.openingPackId === "string"
+          ? { openingPackId: p.openingPackId }
+          : {}),
         ...(p.settings !== undefined
           ? { settings: courtSettingsSchema.parse(p.settings) }
           : {}),

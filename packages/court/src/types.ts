@@ -109,7 +109,11 @@ export type CourtDocument = {
   readonly decisionEpisodeId?: string;
   readonly scripted?: boolean;
   readonly gloss?: string;
-  readonly ponders?: readonly { readonly at: SimTime; readonly text: string }[];
+  readonly ponders?: readonly {
+    readonly at: SimTime;
+    readonly text: string;
+    readonly authorNote?: string;
+  }[];
   readonly openedAt?: SimTime;
   readonly rumorIds?: readonly string[];
   readonly factId?: string;
@@ -220,6 +224,8 @@ export type CourtState = {
   readonly information?: ImperialInformation;
   readonly phase: "running" | "audience" | "complete";
   readonly seed: string;
+  readonly documentIdVersion?: 2;
+  readonly openingPackId?: string;
   readonly audience?: Audience;
   readonly audienceCount: number;
   readonly skipEmptyAudiences?: boolean;

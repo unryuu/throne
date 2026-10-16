@@ -16,7 +16,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "spectator": "pnpm --filter @throne/spectator dev"
+    "spectator": "pnpm --filter @throne/spectator dev",
+    "opening-packs": "tsx apps/web/server/opening-packs.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

@@ -235,7 +235,9 @@ describe("terminal court decisions", () => {
       "enter",
     );
     expect(s.editor?.step).toBe("actor");
-    const question = keypress(s, "enter");
+    const questionMenu = keypress(s, "enter").state;
+    expect(questionMenu.editor?.step).toBe("question");
+    const question = keypress({ ...questionMenu, cursor: 3 }, "enter");
     expect(question.effect).toMatchObject({
       type: "input",
       purpose: "question",
@@ -272,7 +274,7 @@ describe("terminal court decisions", () => {
     expect(s.screen).toBe("talk");
     expect(inputResult(s, "talk", "").effect).toBeUndefined();
     for (let i = 0; i < 3; i++) {
-      expect(keypress(s, "enter").effect).toMatchObject({
+      expect(keypress({ ...s, cursor: 3 }, "enter").effect).toMatchObject({
         type: "input",
         purpose: "talk",
       });

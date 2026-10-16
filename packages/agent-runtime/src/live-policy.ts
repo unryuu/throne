@@ -1,3 +1,5 @@
+import { cachedCall, textRequestIdentity } from "./call-cache.ts";
+export { cachedCall, fingerprint, textRequestIdentity } from "./call-cache.ts";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,6 +16,8 @@ import {
 import type { DecisionPolicy } from "./policy.ts";
 
 export type LiveCallTrace = {
+  readonly cached?: boolean;
+  readonly fingerprint?: string;
   readonly decisionEpisodeId: string;
   readonly requestedProvider: string;
   readonly requestedModel: string;
@@ -196,6 +200,8 @@ export function createLivePolicy(
 }
 
 export type LiveTextRequest = {
+  readonly validate?: (text: string) => void;
+  readonly onBusy?: (busy: boolean) => void;
   readonly decisionEpisodeId: string;
   readonly sessionKey: string;
   readonly systemPrompt: string;
@@ -211,20 +217,38 @@ export function createLiveTextModel(
   return async (request) => {
     if (!request.systemPrompt.trim())
       throw new Error("Actor instructions must not be empty");
-    const result = await callLive(root, onTrace, {
-      decisionEpisodeId: request.decisionEpisodeId,
-      maxTokens: options.maxTokens ?? 32768,
-      ...(options.timeoutMs !== undefined
-        ? { timeoutMs: options.timeoutMs }
-        : {}),
-      systemPrompt: request.systemPrompt,
-      run: (harness) =>
-        harness.complete(
-          request.prompt,
-          `throne-${createHash("sha256").update(request.sessionKey).digest("hex").slice(0, 24)}`,
-          request.decisionEpisodeId,
+    return cachedCall({
+      root,
+      request: {
+        ...textRequestIdentity(request, options.maxTokens ?? 32768),
+        profile: "sdk-minimal",
+        sdkVersion: "0.1.5-rc.2",
+        patch: await readFile(
+          fileURLToPath(new URL("../npc.patch.yml", import.meta.url)),
+          "utf8",
         ),
+      },
+      episode: request.decisionEpisodeId,
+      onTrace,
+      validate: request.validate,
+      onBusy: request.onBusy,
+      run: async (trace) => {
+        const result = await callLive(root, trace, {
+          decisionEpisodeId: request.decisionEpisodeId,
+          maxTokens: options.maxTokens ?? 32768,
+          ...(options.timeoutMs !== undefined
+            ? { timeoutMs: options.timeoutMs }
+            : {}),
+          systemPrompt: request.systemPrompt,
+          run: (harness) =>
+            harness.complete(
+              request.prompt,
+              `throne-${createHash("sha256").update(request.sessionKey).digest("hex").slice(0, 24)}`,
+              request.decisionEpisodeId,
+            ),
+        });
+        return result.finalResponse;
+      },
     });
-    return result.finalResponse;
   };
 }

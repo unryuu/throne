@@ -1927,6 +1927,17 @@ article p {
   line-height: 1.9;
 }
 
+.court-author-note {
+  margin: 10px 0 18px;
+  padding: 10px 16px;
+  border-top: 1px solid #625d4f;
+  color: #c6c0b1;
+  font-size: 0.9em;
+}
+.court-author-note > span {
+  font-weight: 600;
+}
+
 .court-glossary dl > div {
   display: grid;
   grid-template-columns: 6em minmax(0, 1fr);

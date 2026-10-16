@@ -8,7 +8,11 @@ import {
   type RescriptSubmission,
 } from "./model.ts";
 import { parseCourtDecision, type CourtModel } from "./npc.ts";
-import { parseBureau, parseSummaries, parsePonder } from "./information.ts";
+import {
+  parseBureau,
+  parseSummaries,
+  parsePonderResult,
+} from "./information.ts";
 import type { IntelligenceFact } from "./types.ts";
 import type { CourtState } from "./types.ts";
 import {
@@ -45,6 +49,8 @@ const playerEvents = [
 
 export async function startCourtSession(options: {
   runId: string;
+  seed?: string;
+  openingPackId?: string;
   language: string;
   model: CourtModel;
   records?: readonly SimulationRecord[];
@@ -61,22 +67,40 @@ export async function startCourtSession(options: {
     if (cached !== undefined) return cached;
     // One re-ask on malformed output; provider errors surface immediately.
     for (let attempt = 1; ; attempt += 1) {
-      const text = await options.model(request);
-      try {
-        if (request.summaries)
-          parseSummaries(text, (request.input.texts as string[]).length);
-        else if (request.ponder) parsePonder(text);
-        else if (request.bureau)
-          parseBureau(
-            text,
-            request.input.facts as unknown as readonly IntelligenceFact[],
+      const validate = (text: string) => {
+        try {
+          if (request.summaries)
+            parseSummaries(text, (request.input.texts as string[]).length);
+          else if (request.ponder) parsePonderResult(text);
+          else if (request.bureau)
+            parseBureau(
+              text,
+              request.input.facts as unknown as readonly IntelligenceFact[],
+            );
+          else {
+            const decision = parseCourtDecision(text);
+            request.check?.(decision);
+          }
+        } catch (cause) {
+          const error = new Error(
+            cause instanceof Error ? cause.message : String(cause),
           );
-        else {
-          const decision = parseCourtDecision(text);
-          request.check?.(decision);
+          error.name = "ModelOutputError";
+          throw error;
         }
+      };
+      let text: string;
+      try {
+        text = await options.model({ ...request, validate });
+        validate(text);
       } catch (error) {
-        if (attempt < 2) continue;
+        // A cache never keeps invalid output. Only schema failures get one re-ask.
+        if (
+          attempt < 2 &&
+          error instanceof Error &&
+          error.name === "ModelOutputError"
+        )
+          continue;
         throw error;
       }
       memo.set(request.decisionEpisodeId, text);
@@ -108,6 +132,11 @@ export async function startCourtSession(options: {
         scheduledAt: initial.nextAudienceAt!,
         payload: {
           settings: courtSettingsSchema.parse(options.settings ?? {}),
+          seed: options.seed ?? options.runId,
+          documentIdVersion: 2,
+          ...(options.openingPackId
+            ? { openingPackId: options.openingPackId }
+            : {}),
           ...(options.decisionBudget !== undefined
             ? { decisionBudget: options.decisionBudget }
             : {}),

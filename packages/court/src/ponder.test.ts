@@ -369,3 +369,34 @@ describe("ADR 0011", () => {
     expect(() => parsePonder(" ")).toThrow();
   });
 });
+
+it("keeps the author note outside the emperor's monologue in events, replay, view and spectator", async () => {
+  const s = await startCourtSession({
+    runId: "author-note",
+    language: "zh-CN",
+    model: (r) =>
+      r.ponder
+        ? Promise.resolve(
+            "朕得问清旧账。\n\n游戏作者注：明代内阁票拟，通常仍须经皇帝或司礼监批红。",
+          )
+        : quiet(r),
+  });
+  const documentId = s.view.audience!.documents[0]!.id;
+  await s.act(s.view.audience!.id, { type: "open_message", documentId });
+  await s.act(s.view.audience!.id, { type: "ponder", documentId });
+  const ponder = s.view.audience!.documents[0]!.ponders![0]!;
+  expect(ponder.text).toBe("朕得问清旧账。");
+  expect(ponder.authorNote).toContain("内阁票拟");
+  const records = await s.records();
+  expect(
+    replay(createInitialState("author-note"), records, reduceCourtState),
+  ).toEqual(s.state);
+  const chronicle = buildChronicle({
+    status: "waiting",
+    id: "author-note",
+    state: s.state,
+    records,
+    calls: [],
+  });
+  expect(JSON.stringify(chronicle)).toContain('"authorNote":"明代内阁票拟');
+});

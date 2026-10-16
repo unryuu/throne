@@ -20,6 +20,8 @@ import {
 import type { CourtState } from "./types.ts";
 
 export type CourtModelRequest = {
+  readonly validate?: (text: string) => void;
+  readonly onBusy?: (busy: boolean) => void;
   readonly decisionEpisodeId: string;
   readonly sessionKey: string;
   readonly systemPrompt: string;
@@ -443,7 +445,7 @@ export function buildNpcInput(
     log: kept.map((e, i) => ({ n: start + i + 1, ...e.body })),
     now: formatCourtTime(time, language),
     decisionEpisodeId: episodeId(state, actorId),
-    runId,
+    ...(state.documentIdVersion === 2 ? {} : { runId }),
     newFromLogEntry: firstNew < 0 ? null : start + firstNew + 1,
     resources,
     imperialQuestions: Object.values(state.documents)

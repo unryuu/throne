@@ -1,4 +1,5 @@
 import {
+  imperialPresets,
   formatCourtTime,
   type AudienceAction,
   type CourtSettings,
@@ -27,7 +28,7 @@ type Editor = {
   readonly documentId?: string;
   readonly kind?: EdictKind;
   readonly params: Edict["params"];
-  readonly step: "kind" | "county" | "agent" | "actor" | "text";
+  readonly step: "kind" | "county" | "agent" | "actor" | "text" | "question";
 };
 export type Screen =
   | "home"
@@ -223,6 +224,9 @@ export function summary(s: State): string[] {
         (d) =>
           `${disposition(s, d) === "follow_draft" ? "依拟" : disposition(s, d) === "hold" ? "留中" : "改批"}：${d.subject}`,
       ),
+    ...documents(s)
+      .filter((d) => !hasDraft(d))
+      .map((d) => `已阅：${d.subject}`),
     ...s.specials.map((e) => `特旨：${edictText(s, e)}`),
     `司礼监：${s.standing.mode === "personal" ? "亲览全部" : "授权代劳"}${s.standing.instruction ? `；${s.standing.instruction}` : ""}`,
     s.days > 1
@@ -302,7 +306,7 @@ export function menu(s: State): readonly Option[] {
       : []),
     ...(hasDraft(d) && !(s.screen === "menu" && s.returnScreen === "archive")
       ? [
-          { name: "留中 — 暂压着，不发下去", value: "hold" },
+          { name: "留中 — 不批不发，搁着不表态", value: "hold" },
           {
             name: "改批 ·1 — 自己选处置办法",
             value: "custom",
@@ -345,6 +349,11 @@ const hints: Record<EdictKind, string> = {
 function editorOptions(s: State): readonly Option[] {
   const view = s.snapshot!.view;
   switch (s.editor!.step) {
+    case "question":
+      return [
+        ...imperialPresets.question.map((name) => ({ name, value: name })),
+        { name: "自己写", value: "write" },
+      ];
     case "text":
       return [
         { value: "default", name: "按所选办法拟旨 — 无须输入正文" },
@@ -387,20 +396,24 @@ function editorOptions(s: State): readonly Option[] {
 }
 const edictInput = (s: State): Transition =>
   s.editor?.kind === "request_memorial"
-    ? {
-        state: s,
-        effect: {
-          type: "input",
-          purpose: "question",
-          prompt: "垂询什么？",
-          max: 600,
-        },
-      }
+    ? { state: { ...s, cursor: 0, editor: { ...s.editor, step: "question" } } }
     : { state: { ...s, cursor: 0, editor: { ...s.editor!, step: "text" } } };
 function edit(s: State): Transition {
   const option = editorOptions(s)[s.cursor];
   if (!option || option.disabled) return { state: s };
   const editor = s.editor!;
+  if (editor.step === "question")
+    return option.value === "write"
+      ? {
+          state: s,
+          effect: {
+            type: "input",
+            purpose: "question",
+            prompt: "垂询什么？",
+            max: 600,
+          },
+        }
+      : finishEdict(s, "question", option.value);
   if (editor.step === "text")
     return option.value === "default"
       ? finishEdict(s, "edict", "")
@@ -545,7 +558,7 @@ export function keypress(
     return { state: { ...s, helpState: s, screen: "help", scroll: 0 } };
   if (s.screen === "interrupt" && (key === "left" || key === "right"))
     return { state: { ...s, cursor: key === "left" ? 0 : 1 } };
-  if (["help", "edicts", "talk", "ending", "confirm"].includes(s.screen)) {
+  if (["help", "edicts", "ending", "confirm"].includes(s.screen)) {
     if (key === "up" || key === "pageup")
       return {
         state: { ...s, scroll: Math.max(0, s.scroll - (key === "up" ? 1 : 8)) },
@@ -831,6 +844,8 @@ export function keypress(
         (!a.conversation.length && availableEnergy(s) < 1)
       )
         return { state: s };
+      const preset = imperialPresets.talk[s.cursor];
+      if (preset) return inputResult(s, "talk", preset);
       return {
         state: s,
         effect: {
@@ -915,6 +930,11 @@ function options(s: State): readonly Option[] {
         { value: "archive", name: "往日档案" },
         { value: "edicts", name: "已发旨意 / 口奏与谈话" },
         { value: "standing", name: "司礼监常例 · 亲览 / 代劳" },
+      ];
+    case "talk":
+      return [
+        ...imperialPresets.talk.map((name) => ({ name, value: name })),
+        { name: "自己写", value: "write" },
       ];
     case "menu":
       return menu(s);
@@ -1023,10 +1043,15 @@ function body(d: RulerDocumentView): string[] {
         ...(d.gloss ? [`（${d.gloss}）`] : []),
         ...(d.draft ? [`票拟：${d.draft.text}`] : []),
         ...(d.luBingNote ? [`陆炳附言：${d.luBingNote}`] : []),
-        ...(d.ponders ?? []).map((p) => `深思：${p.text}`),
+        ...(d.ponders ?? []).flatMap((p) => [
+          `深思：${p.text}`,
+          ...(p.authorNote ? ["", `游戏作者注：${p.authorNote}`] : []),
+        ]),
         ...(d.rescript
           ? [
-              `已批：${d.rescript.disposition}${d.rescript.text ? ` · ${d.rescript.text}` : ""}`,
+              d.rescript.disposition === "hold" && !hasDraft(d)
+                ? "已阅"
+                : `已批：${d.rescript.disposition === "hold" ? "留中" : d.rescript.disposition === "follow_draft" ? "依拟" : "改批"}${d.rescript.text ? ` · ${d.rescript.text}` : ""}`,
             ]
           : []),
       ];
@@ -1083,7 +1108,14 @@ export function content(
       ),
     );
     add(`还可谈 ${a.roundsLeft} 轮；同次仅首轮耗 1 点。`);
-    add(a.roundsLeft > 0 ? "⏎ 开口说话；← 回御案" : "今日谈话已毕，← 回御案");
+    options(s).forEach((o, i) =>
+      add(`${i === s.cursor ? "▶" : " "} ${o.name}`),
+    );
+    add(
+      a.roundsLeft > 0
+        ? "↑↓ 选择，⏎ 开口说话；← 回御案"
+        : "今日谈话已毕，← 回御案",
+    );
   } else if (s.screen === "ending") {
     add(s.ending || "这一段嘉靖朝已落幕。");
     add(`共调用 ${s.snapshot?.calls ?? 0} 次。`);
