@@ -34,4 +34,6 @@ Ponder, summaries, register, terminal desk (2026-10-15): reading is now free and
 
 Speed and usage (2026-10-15): before tuning wait time, tokens or cache hits, read [docs/performance.md](docs/performance.md); `reasoning_effort: low` does nothing on deepseek-flash, and fewer terminal round trips did not shorten a day.
 
+Web game plan (2026-10-15, draft): put the game online with the user paying for model calls (daily spending cap, no invite codes); default register plain. First step is opening packs (a call-fingerprint cache pre-run over the 9 day-0 branches to day 5, so the first days need no waiting) plus a hand-written routine-memorial library; then a web front end built on the terminal state machine with touch gestures; then deployment. Rules: [ADR 0012](docs/architecture/0012-opening-packs-and-memorial-library.md).
+
 Next: see [HANDOFF.md](HANDOFF.md).
