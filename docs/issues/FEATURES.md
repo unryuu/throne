@@ -1,5 +1,7 @@
 # 当前功能
 
+已完成：[独立部署服务](archive/standalone-server.md)。
+
 已完成：[杂事奏疏库接入](archive/routine-library.md)。
 
 实现中：[开局包与调用指纹库](active/opening-packs.md)（不含杂事库）。

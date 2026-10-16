@@ -17,7 +17,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "spectator": "pnpm --filter @throne/spectator dev",
-    "opening-packs": "tsx apps/web/server/opening-packs.ts"
+    "opening-packs": "tsx apps/web/server/opening-packs.ts",
+    "serve": "vite build apps/web --configLoader runner && tsx apps/web/server/standalone.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

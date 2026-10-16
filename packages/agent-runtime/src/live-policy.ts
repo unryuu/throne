@@ -1,3 +1,5 @@
+export { runsDirectory } from "./runtime-paths.ts";
+import { runsDirectory } from "./runtime-paths.ts";
 import { cachedCall, textRequestIdentity } from "./call-cache.ts";
 export { cachedCall, fingerprint, textRequestIdentity } from "./call-cache.ts";
 import { createHash } from "node:crypto";
@@ -70,7 +72,7 @@ async function callLive<T>(
   call: LiveCall<T>,
 ): Promise<T> {
   const key = await readDeepSeekKey(root);
-  const runtimeRoot = join(root, "runs", "runtime");
+  const runtimeRoot = join(runsDirectory(root), "runtime");
   await mkdir(runtimeRoot, { recursive: true });
   const directory = await mkdtemp(join(runtimeRoot, "npc-"));
   const began = Date.now();

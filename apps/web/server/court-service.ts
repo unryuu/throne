@@ -1,3 +1,4 @@
+import { runsDirectory } from "@throne/agent-runtime/live";
 import { loadRoutineEntries } from "./routine-library.ts";
 import { cachedCall, fingerprint } from "@throne/agent-runtime/live";
 import { chooseOpeningPack, type OpeningPack } from "./opening-pack-store.ts";
@@ -84,7 +85,7 @@ export class CourtService {
 
   private path(id: string): string {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid run id");
-    return join(this.root, "runs", "court", `${id}.json`);
+    return join(runsDirectory(this.root), "court", `${id}.json`);
   }
 
   model(calls: LiveCallTrace[], busy: Set<string>): CourtModel {
@@ -384,7 +385,7 @@ export class CourtService {
       state: entry.session.state,
     };
     const path = this.path(entry.id);
-    await mkdir(join(this.root, "runs", "court"), { recursive: true });
+    await mkdir(join(runsDirectory(this.root), "court"), { recursive: true });
     await writeFile(path + ".tmp", JSON.stringify(saved), { mode: 0o600 });
     await rename(path + ".tmp", path);
   }

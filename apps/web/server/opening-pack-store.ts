@@ -1,3 +1,4 @@
+import { runsDirectory } from "@throne/agent-runtime/live";
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -33,7 +34,7 @@ const schema = {
     return { ...p, settings: courtSettingsSchema.parse(p.settings) };
   },
 };
-const directory = (root: string) => join(root, "runs", "cache", "packs");
+const directory = (root: string) => join(runsDirectory(root), "cache", "packs");
 export async function saveOpeningPack(root: string, pack: OpeningPack) {
   const parsed = schema.parse(pack);
   await mkdir(directory(root), { recursive: true });

@@ -1,3 +1,4 @@
+import { runsDirectory } from "./runtime-paths.ts";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +39,7 @@ export async function runShellDay(
   request: ShellDayRequest,
 ): Promise<ShellDayResult> {
   const key = await readDeepSeekKey(request.root);
-  const runtimeRoot = join(request.root, "runs", "runtime");
+  const runtimeRoot = join(runsDirectory(request.root), "runtime");
   await mkdir(runtimeRoot, { recursive: true });
   const directory = await mkdtemp(join(runtimeRoot, "shell-"));
   const shellDir = join(directory, "shell");

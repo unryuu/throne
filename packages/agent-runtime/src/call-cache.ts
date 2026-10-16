@@ -1,3 +1,4 @@
+import { runsDirectory } from "./runtime-paths.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
   mkdir,
@@ -41,7 +42,7 @@ export async function cachedCall(options: {
   onBusy?: ((busy: boolean) => void) | undefined;
 }): Promise<string> {
   const key = fingerprint(options.request);
-  const directory = join(options.root, "runs", "cache", "calls");
+  const directory = join(runsDirectory(options.root), "cache", "calls");
   await mkdir(directory, { recursive: true });
   const path = join(directory, `${key}.json`);
   const read = async (): Promise<CachedCall | undefined> => {

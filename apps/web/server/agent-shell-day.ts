@@ -1,3 +1,4 @@
+import { runsDirectory } from "@throne/agent-runtime/live";
 // FEAT-0009 experiment: replays a saved court run to one actor's decision point,
 // then lets the actor live that day through the fake terminal, next to a fresh
 // one-shot decision on the same input. Writes runs/agent-shell/<stamp>/.
@@ -37,7 +38,7 @@ const decisionNo = Number(args[2] ?? 12);
 const oneshot = !process.argv.includes("--no-oneshot");
 
 const saved = JSON.parse(
-  await readFile(join(root, "runs", "court", `${runId}.json`), "utf8"),
+  await readFile(join(runsDirectory(root), "court", `${runId}.json`), "utf8"),
 ) as { records: SimulationRecord[]; state: CourtState };
 const episode = `court:${actorId.replace("actor:", "")}:${decisionNo}`;
 const at = saved.state.decisions.find(
@@ -65,7 +66,7 @@ const original = saved.state.decisions.find(
 )!;
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const out = join(root, "runs", "agent-shell", stamp);
+const out = join(runsDirectory(root), "agent-shell", stamp);
 await mkdir(out, { recursive: true });
 await writeFile(join(out, "input.json"), JSON.stringify(input, null, 2));
 console.log(

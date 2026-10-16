@@ -1,3 +1,4 @@
+import { runsDirectory } from "@throne/agent-runtime/live";
 import { loadRoutineEntries } from "./routine-library.ts";
 import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -264,24 +265,23 @@ export async function buildOpeningPack(options: {
       durationMs: Date.now() - began,
       ...usageReport(calls),
     };
-    await mkdir(join(options.root, "runs", "cache", "reports"), {
+    await mkdir(join(runsDirectory(options.root), "cache", "reports"), {
       recursive: true,
     });
     await writeFile(
-      join(options.root, "runs", "cache", "reports", `${pack.id}.json`),
+      join(runsDirectory(options.root), "cache", "reports", `${pack.id}.json`),
       JSON.stringify({ ...report, calls }),
       { mode: 0o600 },
     );
     await saveOpeningPack(options.root, pack);
     return report;
   } catch (cause) {
-    await mkdir(join(options.root, "runs", "cache", "reports"), {
+    await mkdir(join(runsDirectory(options.root), "cache", "reports"), {
       recursive: true,
     });
     await writeFile(
       join(
-        options.root,
-        "runs",
+        runsDirectory(options.root),
         "cache",
         "reports",
         `${pack.id}-failed-${Date.now()}.json`,
@@ -415,8 +415,7 @@ async function main() {
           };
           await writeFile(
             join(
-              root,
-              "runs",
+              runsDirectory(root),
               "cache",
               "reports",
               `${result.pack.id}-verification.json`,
