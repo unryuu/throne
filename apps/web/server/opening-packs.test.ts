@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { LiveCallTrace } from "@throne/agent-runtime/live";
 import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -105,6 +107,28 @@ describe("opening packs", () => {
       parallel: 4,
     });
     expect(report.pack.complete).toBe(true);
+    const opening = report.tasks.filter(({ task }) => task.type === "opening");
+    const ponders = report.tasks.filter(({ task }) => task.type === "ponder");
+    const presets = report.tasks.filter(
+      ({ task }) => task.type === "talk" || task.type === "question",
+    );
+    expect(opening).toHaveLength(9);
+    expect(opening.every((t) => t.reachedDay === 5)).toBe(true);
+    expect(ponders.length).toBeGreaterThanOrEqual(5);
+    expect(ponders.every((t) => t.reachedDay === 0)).toBe(true);
+    expect(presets).toHaveLength(36);
+    expect(presets.every((t) => t.reachedDay === t.task.day + 1)).toBe(true);
+    expect(
+      report.tasks
+        .filter(({ task }) => task.type === "question")
+        .every(
+          ({ task }) =>
+            task.type === "question" &&
+            [ids.yanSong, ids.lvFang, ids.luBing].includes(
+              task.actorId as never,
+            ),
+        ),
+    ).toBe(true);
     const before = live;
     const service = new CourtService(directory, factory, "offline-pack-v1");
     let snap = await service.create("zh-CN", settings);
@@ -113,6 +137,47 @@ describe("opening packs", () => {
       const s = service.entries.get(snap.id)!.session;
       snap = await service.submit(snap.id, defaultSubmission(s));
       expect(snap.status).toBe("waiting");
+    }
+    expect(live).toBe(before);
+    const baseline = await service.create("zh-CN", settings);
+    const baselineSession = service.entries.get(baseline.id)!.session;
+    for (let day = 0; day <= 2; day++) {
+      const checkpoint = await baselineSession.records();
+      for (const task of report.tasks
+        .map((item) => item.task)
+        .filter(
+          (t) => t.day === day && (t.type === "talk" || t.type === "question"),
+        )) {
+        const traces: LiveCallTrace[] = [];
+        const fork = await startCourtSession({
+          runId: randomUUID(),
+          language: "zh-CN",
+          records: checkpoint,
+          fullLog: true,
+          model: service.model(traces, new Set()),
+        });
+        if (task.type === "talk")
+          await fork.act(fork.view.audience!.id, {
+            type: "converse",
+            message: task.message,
+          });
+        else if (task.type === "question")
+          await fork.submit(
+            defaultSubmission(fork, [
+              {
+                edict: {
+                  kind: "request_memorial",
+                  params: { actorId: task.actorId, question: task.message },
+                },
+              },
+            ]),
+          );
+        await advanceDefault(fork, day + 1);
+        expect(traces.length).toBeGreaterThan(0);
+        expect(traces.every((t) => t.cached)).toBe(true);
+      }
+      if (day < 2)
+        await baselineSession.submit(defaultSubmission(baselineSession));
     }
     expect(live).toBe(before);
     const saved = JSON.parse(

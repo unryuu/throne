@@ -24,3 +24,117 @@
 - 报告：`runs/cache/reports/a52b63a2-369d-4c23-b7f3-737739a505af.json`、同名 `-verification.json`；存档可供本机观战。
 
 全量真实建包按 brief 留待验收后另派。`pnpm format:check` 的全库检查发现未改动的 `docs/prompts/杂事奏疏库-提示词.md` 有既有格式问题；按“不碰杂事”边界未改它，也未加忽略规则。最终四项仓库检查结果见交接回复。
+
+## 预跑范围收缩（实现完成，待验收）
+
+验收后用户要求：保留九条主分支至第 5 天和第 0 天深思；预设只保留第 0–2 天召吕芳三句、向北京人物发问三句，每条只到下一朝会。旧 `presetEdicts` 将所有特旨参数做笛卡尔积且延伸到第 5 天，超过了“预设操作短等待”的预算。取消其余特旨预热，并加纯规划 `--plan`，共享执行任务定义，按已有冒烟数据粗估费用；本轮禁止真实建包。
+
+实现：新增 `apps/web/server/opening-pack-plan.ts` 作为规划／执行共用的任务定义，移除 `presetEdicts` 的特旨笛卡尔积；构建报告记录每条实际到达的朝会天数。完整包固定 9 条长分支、36 条单日预设分叉，以及按种子确定的 5–10 条深思。本次不调用真实模型。估算以历史冒烟开局 2 次、两天后续 11 次为基础，推进日均 5.5 次，召见和深思各加一次；乘以历史每次平均费用，不扣跨分支命中。语体和模型行为可能改变实际费用，非上限。
+
+离线回归覆盖实际执行终点、北京目标范围，以及用新局重走全部 36 条单日预设都命中；CLI 测试同时设置空密钥、仅缓存模式并带 `--verify`，确认 `--plan` 不进入建包／验证路径。
+
+命令 `pnpm opening-packs --register=all --plan` 原始标准输出（本次未真实建包）：
+
+```text
+只规划，不调用模型、不写入缓存或开局包。
+T1 浙江那边最近有什么动静？
+T2 严嵩这几天在忙什么？
+T3 宫里用度还撑得住吗？
+Q1 浙江改稻为桑现在办得怎样？
+Q2 新安江堤防挡得住端午汛水吗？
+Q3 你那边钱粮还够不够？
+估算依据：2026-10-16 浅白、归纳开启的冒烟到 day2 共13次（开局2次，其后均摊5.5次/推进日）；费用 US$0.043256004–0.086512008/13次。未扣指纹命中，按浅白样本外推各语体；不是报价或上限，终端整日计1次、不是HTTP请求数。
+opening-plain-true-1
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#5，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 50 条 = 主分支 9 + 深思 5 + 召见 9 + 发问 27
+  粗估 473 次整日/文本调用，US$1.57–3.15
+opening-plain-true-2
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#7，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 52 条 = 主分支 9 + 深思 7 + 召见 9 + 发问 27
+  粗估 475 次整日/文本调用，US$1.58–3.16
+opening-plain-true-3
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#10，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 55 条 = 主分支 9 + 深思 10 + 召见 9 + 发问 27
+  粗估 478 次整日/文本调用，US$1.59–3.18
+opening-plain-true-4
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#10，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 55 条 = 主分支 9 + 深思 10 + 召见 9 + 发问 27
+  粗估 478 次整日/文本调用，US$1.59–3.18
+opening-plain-true-5
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#8，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 53 条 = 主分支 9 + 深思 8 + 召见 9 + 发问 27
+  粗估 476 次整日/文本调用，US$1.58–3.17
+opening-plain-true-6
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#6，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 51 条 = 主分支 9 + 深思 6 + 召见 9 + 发问 27
+  粗估 474 次整日/文本调用，US$1.58–3.15
+opening-classical-true-1
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#6，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 51 条 = 主分支 9 + 深思 6 + 召见 9 + 发问 27
+  粗估 474 次整日/文本调用，US$1.58–3.15
+opening-classical-true-2
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#6，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 51 条 = 主分支 9 + 深思 6 + 召见 9 + 发问 27
+  粗估 474 次整日/文本调用，US$1.58–3.15
+opening-modern-true-1
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#8，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 53 条 = 主分支 9 + 深思 8 + 召见 9 + 发问 27
+  粗估 476 次整日/文本调用，US$1.58–3.17
+opening-modern-true-2
+  准备：开局 → 默认 day2（共享，不计入分叉条数）
+  主分支：follow_draft/follow_draft、follow_draft/hold、follow_draft/reject、hold/follow_draft、hold/hold、hold/reject、reject/follow_draft、reject/hold、reject/reject → day5
+  深思：day0 消息 #1–#10，每条独立展开并深思
+  day0 → day1：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day1 → day2：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  day2 → day3：召吕芳 T1–T3；严嵩、吕芳、陆炳各问 Q1–Q3（12 条）
+  共 55 条 = 主分支 9 + 深思 10 + 召见 9 + 发问 27
+  粗估 478 次整日/文本调用，US$1.59–3.18
+合计 10 组，526 条分叉；粗估 4756 次调用，US$15.83–31.65。
+```
+
+本轮验收：`pnpm test` 35 个文件、183 项通过；`pnpm typecheck`、`pnpm format:check`、`pnpm build` 全通过（构建仅有既有体积提示）。未运行真实建包，未提交 Git，未改 STATUS。

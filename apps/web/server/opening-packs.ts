@@ -11,18 +11,27 @@ import {
   type RescriptSubmission,
   type SpecialEdict,
   type CourtSettings,
-  type EdictKind,
 } from "@throne/court";
 import type { LiveCallTrace } from "@throne/agent-runtime/live";
 import type { SimulationRecord } from "@throne/shared-types";
 import { CourtService, type CourtModelFactory } from "./court-service.ts";
 import { saveOpeningPack, type OpeningPack } from "./opening-pack-store.ts";
 
-export const branchChoices = ["follow_draft", "hold", "reject"] as const;
-export type OpeningChoice = (typeof branchChoices)[number];
-export const openingBranches = branchChoices.flatMap((a) =>
-  branchChoices.map((b) => [a, b] as const),
-);
+import {
+  openingBranches,
+  openingPackPlan,
+  openingTaskLabel,
+  formatOpeningPlan,
+  planEstimateNote,
+  type OpeningChoice,
+  type OpeningTask,
+} from "./opening-pack-plan.ts";
+export {
+  branchChoices,
+  openingBranches,
+  type OpeningChoice,
+} from "./opening-pack-plan.ts";
+
 export function defaultSubmission(
   session: CourtSession,
   specials: readonly SpecialEdict[] = [],
@@ -31,13 +40,7 @@ export function defaultSubmission(
     audienceId: session.view.audience!.id,
     items: session.view.audience!.documents.map((d) => ({
       documentId: d.id,
-      disposition:
-        d.id === ids.policyMemorial &&
-        specials.some((s) => s.edict.kind === "approve_policy")
-          ? "hold"
-          : d.draft || d.hasDraft
-            ? "follow_draft"
-            : "hold",
+      disposition: d.draft || d.hasDraft ? "follow_draft" : "hold",
     })),
     specials,
   };
@@ -82,43 +85,6 @@ export async function advanceDefault(
       throw new Error("Opening branch ended before requested day");
     await session.submit(defaultSubmission(session));
   }
-}
-export function presetEdicts(session: CourtSession): readonly SpecialEdict[] {
-  const options = session.view.options;
-  const kinds: readonly EdictKind[] = [
-    ...(options.policyDecided ? [] : ["approve_policy" as const]),
-    "order_relief",
-    "order_inquiry",
-    "request_memorial",
-    "reprimand",
-    "arrest",
-  ];
-  return kinds.flatMap((kind): SpecialEdict[] => {
-    if (kind === "request_memorial")
-      return options.questionable.flatMap((a) =>
-        imperialPresets.question.map((question) => ({
-          edict: { kind, params: { actorId: a.id, question } },
-        })),
-      );
-    if (kind === "reprimand" || kind === "arrest")
-      return (
-        kind === "arrest" ? options.arrestable : options.reprimandable
-      ).map((a) => ({ edict: { kind, params: { actorId: a.id } } }));
-    if (kind === "order_inquiry")
-      return options.counties.flatMap((c) =>
-        ["hu", "jinyiwei"].map((agent) => ({
-          edict: { kind, params: { countyId: c.id, agent } },
-        })),
-      );
-    if (kind === "order_relief")
-      return [
-        { edict: { kind, params: {} } },
-        ...options.counties.map((c) => ({
-          edict: { kind, params: { countyId: c.id } },
-        })),
-      ];
-    return [{ edict: { kind, params: {} } }];
-  });
 }
 export function usageReport(calls: readonly LiveCallTrace[]) {
   const total = (key: string) =>
@@ -206,57 +172,77 @@ export async function buildOpeningPack(options: {
     options.onProgress?.(`${pack.id}: opening seed=${pack.seed}`);
     const baseline = await session();
     const initial = await baseline.records();
-    const jobs: { label: string; run: () => Promise<void> }[] = branches.map(
-      (b) => ({
-        label: b.join("/"),
-        run: async () => {
-          const s = await session(initial);
-          await submitOpening(s, b);
-          await advanceDefault(s, throughDay);
-        },
-      }),
-    );
-    if (options.extras !== false) {
-      for (let day = 0; day <= Math.min(2, throughDay); day++) {
-        const checkpoint = await baseline.records();
-        if (day === 0)
-          for (const doc of baseline.view.audience!.documents)
-            jobs.push({
-              label: `day0 ponder ${doc.id}`,
-              run: async () => {
-                const s = await session(checkpoint);
-                await s.act(s.view.audience!.id, {
-                  type: "open_message",
-                  documentId: doc.id,
-                });
-                await s.act(s.view.audience!.id, {
-                  type: "ponder",
-                  documentId: doc.id,
-                });
-              },
-            });
-        for (const message of imperialPresets.talk)
-          jobs.push({
-            label: `day${day} talk ${message}`,
-            run: async () => {
-              const s = await session(checkpoint);
-              await s.act(s.view.audience!.id, { type: "converse", message });
-              await advanceDefault(s, throughDay);
-            },
-          });
-        for (const edict of presetEdicts(baseline))
-          jobs.push({
-            label: `day${day} ${JSON.stringify(edict)}`,
-            run: async () => {
-              const s = await session(checkpoint);
-              await s.submit(defaultSubmission(s, [edict]));
-              await advanceDefault(s, throughDay);
-            },
-          });
-        if (day < Math.min(2, throughDay))
-          await baseline.submit(defaultSubmission(baseline));
-      }
+    const plan = openingPackPlan({
+      seed: pack.seed,
+      throughDay,
+      branches,
+      ...(options.extras !== undefined ? { extras: options.extras } : {}),
+    });
+    if (
+      options.extras !== false &&
+      plan.tasks.filter((t) => t.type === "ponder").length !==
+        baseline.view.audience!.documents.length
+    )
+      throw new Error(
+        "Opening plan message count differs from the initial desk",
+      );
+    const checkpoints = new Map<number, readonly SimulationRecord[]>([
+      [0, initial],
+    ]);
+    for (let day = 1; day <= plan.preparationThroughDay; day++) {
+      await baseline.submit(defaultSubmission(baseline));
+      checkpoints.set(day, await baseline.records());
     }
+    const completedTasks: { task: OpeningTask; reachedDay: number }[] = [];
+    const jobs = plan.tasks.map((task) => ({
+      label: openingTaskLabel(task),
+      run: async () => {
+        const s = await session(checkpoints.get(task.day)!);
+        switch (task.type) {
+          case "opening":
+            await submitOpening(s, task.choices);
+            break;
+          case "ponder": {
+            const documentId =
+              s.view.audience!.documents[task.messageIndex]!.id;
+            await s.act(s.view.audience!.id, {
+              type: "open_message",
+              documentId,
+            });
+            await s.act(s.view.audience!.id, { type: "ponder", documentId });
+            break;
+          }
+          case "talk":
+            await s.act(s.view.audience!.id, {
+              type: "converse",
+              message: task.message,
+            });
+            break;
+          case "question": {
+            if (
+              !s.view.options.questionable.some((a) => a.id === task.actorId) ||
+              s.state.actors[task.actorId]?.location !== "beijing"
+            )
+              throw new Error(
+                `Planned question target unavailable in Beijing: ${task.actorId}`,
+              );
+            await s.submit(
+              defaultSubmission(s, [
+                {
+                  edict: {
+                    kind: "request_memorial",
+                    params: { actorId: task.actorId, question: task.message },
+                  },
+                },
+              ]),
+            );
+            break;
+          }
+        }
+        await advanceDefault(s, task.throughDay);
+        completedTasks.push({ task, reachedDay: Math.floor(s.view.time / 12) });
+      },
+    }));
     let cursor = 0;
     const results = await Promise.allSettled(
       Array.from({ length: options.parallel ?? 2 }, async () => {
@@ -271,6 +257,7 @@ export async function buildOpeningPack(options: {
     if (failed?.status === "rejected") throw failed.reason;
     const report = {
       pack,
+      tasks: completedTasks,
       durationMs: Date.now() - began,
       ...usageReport(calls),
     };
@@ -329,23 +316,57 @@ async function main() {
     throw new Error("Invalid --summaries");
   const onlyDefault = process.argv.includes("--default-only");
   const throughDay = integer("days", "5", 1);
+  const parallel = integer("parallel", "2", 1);
+  const planning = process.argv.includes("--plan");
+  const totals = { tasks: 0, calls: 0, low: 0, high: 0, groups: 0 };
+  if (planning) {
+    console.log("只规划，不调用模型、不写入缓存或开局包。");
+    imperialPresets.talk.forEach((text, i) => console.log(`T${i + 1} ${text}`));
+    imperialPresets.question.forEach((text, i) =>
+      console.log(`Q${i + 1} ${text}`),
+    );
+    console.log(planEstimateNote);
+  }
   for (const register of registers)
     for (
       let i = 0;
       i < integer("groups", register === "plain" ? "6" : "2", 1);
       i++
     ) {
+      const id = onlyDefault
+        ? planning
+          ? `default-${register}-${summaries}-${i + 1}`
+          : randomUUID()
+        : `opening-${register}-${summaries}-${i + 1}`;
+      const settings = courtSettingsSchema.parse({
+        register,
+        summaries: summaries === "true",
+      });
+      if (planning) {
+        const plan = openingPackPlan({
+          seed: id,
+          throughDay,
+          ...(onlyDefault
+            ? {
+                branches: [["follow_draft", "follow_draft"]] as const,
+                extras: false,
+              }
+            : {}),
+        });
+        console.log(formatOpeningPlan(id, plan));
+        totals.groups++;
+        totals.tasks += plan.tasks.length;
+        totals.calls += plan.estimatedCalls;
+        totals.low += plan.estimatedUsdOffPeak;
+        totals.high += plan.estimatedUsdPeak;
+        continue;
+      }
       const result = await buildOpeningPack({
         root,
-        id: onlyDefault
-          ? randomUUID()
-          : `opening-${register}-${summaries}-${i + 1}`,
-        settings: courtSettingsSchema.parse({
-          register,
-          summaries: summaries === "true",
-        }),
+        id,
+        settings,
         throughDay,
-        parallel: integer("parallel", "2", 1),
+        parallel,
         ...(onlyDefault
           ? {
               branches: [["follow_draft", "follow_draft"]] as const,
@@ -406,6 +427,10 @@ async function main() {
         }
       }
     }
+  if (planning)
+    console.log(
+      `合计 ${totals.groups} 组，${totals.tasks} 条分叉；粗估 ${totals.calls} 次调用，US$${totals.low.toFixed(2)}–${totals.high.toFixed(2)}。`,
+    );
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])
   await main();
