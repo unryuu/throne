@@ -116,6 +116,9 @@ export const initialState = (runs: readonly RunChoice[] = []): State => ({
   notice: "",
   ending: "",
 });
+// 通政司的正文开头自带“通政司谨汇”，列表和标题里不再重复发件人与类型。
+const source = (d: { kind: string; fromName: string }, sep: string) =>
+  d.kind === "bureau" ? "" : `${d.fromName}${sep}`;
 const documents = (s: State) => s.snapshot?.view.audience?.documents ?? [];
 export const currentDocument = (s: State): RulerDocumentView | undefined =>
   s.screen === "archive" ||
@@ -885,7 +888,7 @@ function options(s: State): readonly Option[] {
       return [
         ...documents(s).map((d) => ({
           value: d.id,
-          name: `${s.seen.includes(d.id) ? "✓" : "□"} ${d.fromName}·${t(`court.kind.${d.kind}` as MessageKey)}  ${d.subject}${hasDraft(d) ? ` 〔${disposition(s, d) === "follow_draft" ? "依拟" : disposition(s, d) === "hold" ? "留中" : "改批"}〕` : ""}`,
+          name: `${s.seen.includes(d.id) ? "✓" : "□"} ${source(d, "·" + t(`court.kind.${d.kind}` as MessageKey) + "  ")}${d.subject}${hasDraft(d) ? ` 〔${disposition(s, d) === "follow_draft" ? "依拟" : disposition(s, d) === "hold" ? "留中" : "改批"}〕` : ""}`,
         })),
         {
           value: "talk",
@@ -920,7 +923,7 @@ function options(s: State): readonly Option[] {
     case "archive":
       return (s.snapshot?.view.archive ?? []).map((d) => ({
         value: d.id,
-        name: `${d.fromName} · ${d.subject}`,
+        name: `${source(d, " · ")}${d.subject}`,
       }));
     case "seclusion":
       return [1, 3, 7, 15, 30]
@@ -1142,7 +1145,7 @@ export function documentContext(
       : currentDocument(s);
   if (d)
     return {
-      title: wrap(`${d.fromName} · ${d.subject}`, w),
+      title: wrap(`${source(d, " · ")}${d.subject}`, w),
       body: body(d).flatMap((text) => wrap("    " + text, w)),
     };
   return {
