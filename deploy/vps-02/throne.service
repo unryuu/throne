@@ -1,0 +1,26 @@
+[Unit]
+Description=Throne private court
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=throne
+Group=throne
+WorkingDirectory=/opt/throne
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/throne.env
+ExecStart=/usr/bin/node /opt/throne/node_modules/tsx/dist/cli.mjs /opt/throne/apps/web/server/standalone.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=1800
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/throne
+
+[Install]
+WantedBy=multi-user.target
