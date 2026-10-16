@@ -1,3 +1,4 @@
+import { atmosphereLine, atmosphereLines, waitedText } from "./atmosphere.ts";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,15 +24,9 @@ import {
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const demo = process.argv.includes("--demo");
 const serviceRoot = demo ? await mkdtemp(join(tmpdir(), "throne-demo-")) : root;
-let calls = 0;
 const service = new CourtService(
   serviceRoot,
-  demo
-    ? () => async (r) => {
-        calls++;
-        return demoModel(r);
-      }
-    : undefined,
+  demo ? () => async (r) => demoModel(r) : undefined,
 );
 let state: State = initialState(demo ? [] : await listRuns(root));
 let terminal: Terminal | undefined;
@@ -40,7 +35,8 @@ let stopped = false;
 let lastEffect: Effect | undefined;
 let ticker: ReturnType<typeof setInterval> | undefined;
 let spectator: ChildProcess | undefined;
-let pulse = 0;
+let waitingSince: number | undefined;
+let waitingSeed = 0;
 let animation:
   { documentId: string; text: string; visible: number } | undefined;
 
@@ -84,8 +80,18 @@ const draw = () => {
       shown,
       process.stdout.columns || 80,
       process.stdout.rows || 24,
-      busy && service.busyMessages().length
-        ? { text: service.busyMessages().join(" "), calls }
+      busy && waitingSince !== undefined
+        ? (() => {
+            const waited = Date.now() - waitingSince;
+            return {
+              text: atmosphereLine(
+                atmosphereLines(state.snapshot?.view.time),
+                waited,
+                waitingSeed,
+              ),
+              elapsed: waitedText(waited),
+            };
+          })()
         : undefined,
     ),
   );
@@ -114,7 +120,6 @@ process.once("unhandledRejection", (error) => {
 
 async function accept(snapshot: CourtSnapshot): Promise<void> {
   state = receive(state, snapshot);
-  if (!demo) calls = snapshot.calls;
   if (snapshot.status === "complete") {
     const review = await service.review(snapshot.id);
     const summary = review.state.summary;
@@ -158,6 +163,10 @@ async function execute(effect: Effect): Promise<void> {
     state = { ...state, ending: state.ending + "\n\n" + opened.message };
     return;
   }
+  if (waitingSince === undefined) {
+    waitingSince = Date.now();
+    waitingSeed = Math.floor(Math.random() * 1000);
+  }
   let next: CourtSnapshot;
   if (effect.type === "retry") {
     if (state.snapshot?.status === "failed")
@@ -170,7 +179,6 @@ async function execute(effect: Effect): Promise<void> {
     lastEffect = effect;
     switch (effect.type) {
       case "create":
-        calls = 0;
         next = await service.create("zh-CN", effect.settings);
         break;
       case "load":
@@ -210,9 +218,8 @@ async function dispatch(result: Transition): Promise<void> {
 try {
   terminal = new Terminal();
   ticker = setInterval(() => {
-    pulse++;
     if (busy) draw();
-  }, 1600);
+  }, 1000);
   const typewriter = setInterval(() => {
     if (!animation || busy) return;
     animation = { ...animation, visible: animation.visible + 4 };
@@ -245,6 +252,7 @@ try {
       })
       .finally(() => {
         busy = false;
+        waitingSince = undefined;
         draw();
       });
   }, draw);

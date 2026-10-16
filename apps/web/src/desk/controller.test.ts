@@ -214,17 +214,12 @@ describe("browser court effect runner", () => {
     expect(controller.getSnapshot().state.error).toBeUndefined();
   });
 
-  it("locks duplicate taps and polls actor progress by operation id, then ignores stale progress", async () => {
+  it("locks duplicate taps and times the wait without asking who is busy", async () => {
     const f = await fixture();
     const snapshot = await f.service.create("zh-CN");
     const ready = receive(initialState(), snapshot).snapshot!;
     let finish!: (value: CourtSnapshot) => void;
-    let finishProgress!: (value: { busy: string[] }) => void;
     const request = vi.fn<CourtRequest>(async <T>(path: string) => {
-      if (path.startsWith("/progress"))
-        return (await new Promise<{ busy: string[] }>((resolve) => {
-          finishProgress = resolve;
-        })) as T;
       if (path === "")
         return (await new Promise<CourtSnapshot>((resolve) => {
           finish = resolve;
@@ -252,18 +247,15 @@ describe("browser court effect runner", () => {
       await controller.choose(0);
       const pending = controller.choose(4);
       await controller.choose(4);
-      await vi.advanceTimersByTimeAsync(1200);
-      expect(request).toHaveBeenCalledWith("/progress/operation-1");
-      finishProgress({ busy: ["严嵩正在拟票……"] });
-      await vi.advanceTimersByTimeAsync(1);
-      expect(controller.getSnapshot().progress).toContain("严嵩");
-      await vi.advanceTimersByTimeAsync(1200);
+      expect(controller.getSnapshot().busySince).toBe(Date.now());
+      await vi.advanceTimersByTimeAsync(5000);
       finish(ready);
       await pending;
-      finishProgress({ busy: ["迟来的提示"] });
-      await vi.advanceTimersByTimeAsync(1);
       expect(controller.getSnapshot().busy).toBe(false);
-      expect(controller.getSnapshot().progress).toBe("");
+      expect(controller.getSnapshot().busySince).toBeUndefined();
+      expect(
+        request.mock.calls.some(([path]) => path.startsWith("/progress")),
+      ).toBe(false);
       expect(request.mock.calls.filter(([path]) => path === "")).toHaveLength(
         1,
       );

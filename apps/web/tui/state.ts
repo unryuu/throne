@@ -1305,7 +1305,7 @@ export function render(
   s: State,
   width = 80,
   height = 24,
-  waiting?: { readonly text: string; readonly calls: number },
+  waiting?: { readonly text: string; readonly elapsed: string },
 ): string {
   width = Math.max(2, width);
   height = Math.max(4, height);
@@ -1359,7 +1359,7 @@ export function render(
   }
   while (visible.length < room) visible.push("");
   const status = waiting
-    ? `${waiting.text} 已调用 ${waiting.calls} 次`
+    ? `${waiting.text}　${waiting.elapsed}`
     : s.notice ||
       (view?.cappedWakes
         ? `注意：已有 ${view.cappedWakes} 次人物决策被调用上限拦住。`

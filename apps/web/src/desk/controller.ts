@@ -23,7 +23,8 @@ export type InputPanel = {
 export type DeskView = {
   readonly state: State;
   readonly busy: boolean;
-  readonly progress: string;
+  /** When the current wait began; the emperor sees only the palace, not who is busy. */
+  readonly busySince: number | undefined;
   readonly input: InputPanel | undefined;
 };
 type Dependencies = {
@@ -41,8 +42,6 @@ export class DeskController {
   private readonly listeners = new Set<() => void>();
   private lastEffect: Effect | undefined;
   private progressId: string | undefined;
-  private polling = false;
-  private epoch = 0;
   constructor(
     private readonly deps: Dependencies,
     state: State = {
@@ -50,7 +49,7 @@ export class DeskController {
       settings: { register: "plain", summaries: true },
     },
   ) {
-    this.view = { state, busy: false, progress: "", input: undefined };
+    this.view = { state, busy: false, busySince: undefined, input: undefined };
   }
   getSnapshot = (): DeskView => this.view;
   subscribe = (listener: () => void): (() => void) => {
@@ -66,8 +65,7 @@ export class DeskController {
   }
   private async run(action: () => Promise<void>): Promise<void> {
     if (this.view.busy) return;
-    this.update({ busy: true, progress: "正在处理……" });
-    const ticker = setInterval(() => void this.pollProgress(), 1200);
+    this.update({ busy: true, busySince: Date.now() });
     try {
       await action();
     } catch (error) {
@@ -80,30 +78,8 @@ export class DeskController {
             : ""),
       });
     } finally {
-      clearInterval(ticker);
-      this.epoch++;
       this.progressId = undefined;
-      this.update({ busy: false, progress: "" });
-    }
-  }
-  private async pollProgress(): Promise<void> {
-    const id = this.progressId;
-    if (!id || this.polling) return;
-    const epoch = this.epoch;
-    this.polling = true;
-    try {
-      const progress = await this.deps.request<{ busy: readonly string[] }>(
-        `/progress/${encodeURIComponent(id)}`,
-      );
-      if (this.epoch === epoch && this.view.busy)
-        this.update({ progress: progress.busy.join(" ") || "正在处理……" });
-    } catch (error) {
-      if (this.epoch === epoch && this.view.busy)
-        this.update({
-          progress: `进度暂不可用：${message(error)}；仍在等待操作结果。`,
-        });
-    } finally {
-      this.polling = false;
+      this.update({ busy: false, busySince: undefined });
     }
   }
   async key(key: Key): Promise<void> {

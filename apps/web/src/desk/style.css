@@ -287,3 +287,51 @@ dd {
     border-inline: 1px solid #dcd2c1;
   }
 }
+
+.waiting-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 28px;
+  background: rgba(244, 239, 229, 0.88);
+  backdrop-filter: blur(2px);
+  text-align: center;
+  pointer-events: none;
+}
+.waiting-line {
+  margin: 0;
+  font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+  font-size: 1.35rem;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+  color: #4a3b2c;
+  animation: waiting-fade 4s ease-in-out;
+}
+.waiting-time {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: #8a7c66;
+}
+@keyframes waiting-fade {
+  0% {
+    opacity: 0;
+  }
+  18%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waiting-line {
+    animation: none;
+  }
+}

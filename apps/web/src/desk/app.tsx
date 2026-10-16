@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { formatCourtTime } from "@throne/court";
 import { courtGlossary, createTranslator } from "@throne/localization";
 import {
@@ -11,6 +11,11 @@ import {
   summary,
   type State,
 } from "../../tui/state.ts";
+import {
+  atmosphereLine,
+  atmosphereLines,
+  waitedText,
+} from "../../tui/atmosphere.ts";
 import { gameKey, inputKey, thumbActions } from "./controls.ts";
 import { DeskController, type InputPanel } from "./controller.ts";
 
@@ -353,7 +358,7 @@ export function DeskApp({
   readonly controller: DeskController;
   readonly storageWarning?: string;
 }) {
-  const { state, busy, progress, input } = useSyncExternalStore(
+  const { state, busy, busySince, input } = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
   );
@@ -511,11 +516,14 @@ export function DeskApp({
         </main>
         <div className="status-line" role="status" aria-live="polite">
           {busy
-            ? progress
+            ? ""
             : state.snapshot
               ? "已完成步骤自动存档 · 暂定处置退朝时提交"
               : "点按进入 · 支持键盘"}
         </div>
+        {busy && busySince !== undefined && (
+          <WaitingVeil since={busySince} time={state.snapshot?.view.time} />
+        )}
         <nav className="thumb-bar" aria-label="御案快捷操作">
           {thumbActions(state).map((action) => (
             <button
@@ -549,5 +557,32 @@ export function DeskApp({
         />
       )}
     </>
+  );
+}
+
+/** Short waits stay quiet; longer ones show the palace and how long it has been. */
+function WaitingVeil({
+  since,
+  time,
+}: {
+  readonly since: number;
+  readonly time: number | undefined;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [seed] = useState(() => Math.floor(Math.random() * 1000));
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, []);
+  const waited = now - since;
+  if (waited < 700) return null;
+  const line = atmosphereLine(atmosphereLines(time), waited, seed);
+  return (
+    <div className="waiting-veil" role="status" aria-live="polite">
+      <p key={line} className="waiting-line">
+        {line}
+      </p>
+      <p className="waiting-time">{waitedText(waited)}</p>
+    </div>
   );
 }
