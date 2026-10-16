@@ -1743,14 +1743,15 @@ async function handlePonder(
   const document = [...(view.audience?.documents ?? []), ...view.archive].find(
     (d) => d.id === documentId,
   )!;
+  // Oldest and slowest-changing first so successive ponders share a cached prefix.
   const input = j({
-    document,
-    desk: view.audience?.documents ?? [],
     archive: view.archive,
     edicts: view.edicts,
     conversations: view.conversations ?? [],
+    desk: view.audience?.documents ?? [],
     oralReports: view.audience?.oralReports ?? [],
     date: formatCourtTime(ctx.time, "zh-CN"),
+    document,
   }) as JsonObject;
   const text = parsePonder(
     await options.model({

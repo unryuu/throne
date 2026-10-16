@@ -102,6 +102,21 @@ describe("agent shell", () => {
     const greeting = shellGreeting(input);
     expect(greeting).toContain("新的经历有 1 条，从 log/0003 起");
     expect(greeting).toContain("$ help");
+    // The usual morning reads are already done; long-past experience is only listed.
+    expect(greeting).toContain("$ cat profile.txt\nname: 郑泌昌");
+    expect(greeting).toContain("$ ls log\n0001-");
+    expect(greeting).toContain("$ cat log/0003-received.txt");
+    expect(greeting).toContain("$ cat log/0001");
+    const long = shellGreeting({
+      ...input,
+      log: [
+        { n: 1, type: "observed", text: "旧".repeat(7000) },
+        ...(input.log as JsonObject[]).slice(1),
+      ],
+    });
+    expect(long).toContain("$ ls log\n0001-");
+    expect(long).not.toContain("$ cat log/0001");
+    expect(long).toContain("$ cat log/0002");
   });
 
   it("answers the usual read-only commands, pipes and chains", () => {

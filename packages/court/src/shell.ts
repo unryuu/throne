@@ -105,6 +105,8 @@ function render(value: JsonValue | undefined, indent = ""): string {
     .replace(/^\n/, "");
 }
 
+const logNumber = (path: string) => Number(/^\/log\/(\d+)/.exec(path)![1]);
+
 /** Builds the read-only file tree from the actor-visible input. */
 export function shellFiles(input: JsonObject): Files {
   const files = new Map<string, string>();
@@ -267,10 +269,40 @@ export function shellGreeting(input: JsonObject): string {
   const today = typeof energy === "number" ? `今天你有 ${energy} 点精力。` : "";
   return [
     `${String(input.now)}。${news}${today}`,
+    "下面是你今早已经在终端里看过的；太早的经历只列了文件名，要看再 cat。",
     "",
     "$ help",
     shellHelp(input),
+    ...morningReads(input, typeof first === "number" ? first : Infinity),
   ].join("\n");
+}
+
+/** Older experience read in the morning, newest first, before only names are listed. */
+const morningLogChars = 6000;
+
+/** Every file as if the actor had just cat'ed it, except experience past the budget. */
+function morningReads(input: JsonObject, firstNew: number): string[] {
+  const files = shellFiles(input);
+  const logs = [...files.keys()].filter((p) => p.startsWith("/log/"));
+  const shown = new Set(logs.filter((p) => logNumber(p) >= firstNew));
+  let budget = morningLogChars;
+  for (const path of logs.filter((p) => !shown.has(p)).reverse()) {
+    budget -= files.get(path)!.length;
+    if (budget < 0) break;
+    shown.add(path);
+  }
+  const commands: string[] = [];
+  for (const path of files.keys()) {
+    const log = path.startsWith("/log/");
+    if (log && !commands.includes("ls log")) commands.push("ls log");
+    if (!log || shown.has(path)) commands.push(`cat ${path.slice(1)}`);
+  }
+  let state = emptyShellState;
+  return commands.flatMap((command) => {
+    const result = runShell(input, state, command, files);
+    state = result.state;
+    return ["", `$ ${command}`, result.output];
+  });
 }
 
 // ---------- parsing ----------

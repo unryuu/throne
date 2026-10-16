@@ -193,6 +193,9 @@ describe("ADR 0011", () => {
       '"inner"',
     ])
       expect(wire).not.toContain(secret);
+    // Slow-changing context first, the pondered paper last, for the prompt cache.
+    expect(Object.keys(request.input)[0]).toBe("archive");
+    expect(Object.keys(request.input).at(-1)).toBe("document");
     expect(request.prompt).toContain("吕芳只说一切平安");
     expect(request.prompt).toContain("旧账呢");
     const { ponders: _, ...visible } = s.view.audience!.documents.find(
