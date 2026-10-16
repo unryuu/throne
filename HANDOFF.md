@@ -1,4 +1,4 @@
-# HANDOFF：已部署到 1566.unryuu.top，等作者试玩
+# HANDOFF：已上线 1566.unryuu.top，收集试玩反馈
 
 写于 2026-10-16，分支 `feat/jiajing-court`（已推送，未合 `main`）。先读 STATUS.md 最后一段和 [docs/deployment.md](docs/deployment.md)。
 
@@ -16,11 +16,10 @@
 
 ## 下一步
 
-- 开局包：前两次建包分别撞上“归纳少一句”和“打断缺理由”，两个 bug 都已修（3220a67、e24379b），建包也加了按分叉重试。第三次建包在后台跑，日志在会话 scratchpad 的 `packs3.log`。看 `runs/cache/packs/` 里有没有 `opening-plain-true-1` 的正式包（不是 `-failed`）；有就把 `runs/cache/` 传到服务器 `/var/lib/throne/runs/cache/`（权限归 throne）。
-- **服务器还是旧代码**：上面两个修复要上线。用户可能正在玩，重启前先问（看 `/var/lib/throne/runs/analytics/events.jsonl` 最后一条的时间）。部署流程：`git archive` 传到 /opt/throne → build → `systemctl restart throne`。
-- 决定：暂时只做这一组浅白开局包，玩的人多了再加。
-- 部署已完成，台账已更新。更新流程见 VPS 台账 vps-02 档案的 throne 一节；配置文件在 `deploy/vps-02/`（nginx 1.20 要用 `listen ... ssl http2`，不支持 `http2 on`）。
+- 已上线（2026-10-17）：一组浅白开局包 `opening-plain-true-1`（线上开局 0.9 秒命中），等待意境句，归纳和打断两处容错修复。决定暂时只做这一组，玩的人多了再加；加之前先改完试玩反馈，因为库或提示词一改包就要重建。
+- 更新服务器：`git archive` 传到 `/opt/throne` → `apps/web` 里 build → `systemctl restart throne`。重启前先看 `/var/lib/throne/runs/analytics/events.jsonl` 最后一条的时间，确认没人在等模型。新建的包要把 `runs/cache/calls` 和 `runs/cache/packs/<包>.json` 传到 `/var/lib/throne/runs/cache/`（tar 加 `COPYFILE_DISABLE=1`，避免带上 `._` 文件），权限归 throne。
 - 试玩反馈之后：滑动手势，以及发小红书前要做的全站花费上限。
+- 渠道统计：在服务器上用 `THRONE_RUNS_DIR=/var/lib/throne/runs` 跑 `apps/web/server/analytics-report.ts`。
 
 ## 坑
 
