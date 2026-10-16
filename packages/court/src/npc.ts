@@ -98,7 +98,12 @@ export const courtDecisionSchema = z.object({
       }),
     )
     .default([]),
-  interrupt: z.object({ reason: z.string().max(300) }).nullish(),
+  // An interrupt without a reason (seen when talking face to face, where it
+  // has no effect) is no interrupt rather than a failed decision.
+  interrupt: z
+    .object({ reason: z.string().max(300).nullish() })
+    .nullish()
+    .transform((v) => (v?.reason?.trim() ? { reason: v.reason } : null)),
 });
 export type CourtDecision = z.infer<typeof courtDecisionSchema>;
 

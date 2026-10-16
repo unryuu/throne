@@ -989,7 +989,7 @@ describe("court session", () => {
         ],
       }),
     );
-    expect(decision.interrupt?.reason).toBe("");
+    expect(decision.interrupt).toBeNull();
   });
 
   it("does not let Lu Bing sit on a field report", async () => {
@@ -1058,3 +1058,22 @@ describe("court session", () => {
 });
 
 export type { CourtState };
+
+describe("lenient decision fields", () => {
+  it("treats an interrupt without a reason as no interrupt", () => {
+    const base = { inner: "想", reply: "是。" };
+    expect(
+      parseCourtDecision(JSON.stringify({ ...base, interrupt: {} })).interrupt,
+    ).toBeNull();
+    expect(
+      parseCourtDecision(
+        JSON.stringify({ ...base, interrupt: { reason: "  " } }),
+      ).interrupt,
+    ).toBeNull();
+    expect(
+      parseCourtDecision(
+        JSON.stringify({ ...base, interrupt: { reason: "堤要决了" } }),
+      ).interrupt,
+    ).toEqual({ reason: "堤要决了" });
+  });
+});

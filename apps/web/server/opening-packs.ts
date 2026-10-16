@@ -252,7 +252,24 @@ export async function buildOpeningPack(options: {
         while (cursor < jobs.length) {
           const job = jobs[cursor++]!;
           options.onProgress?.(`${pack.id}: ${job.label}`);
-          await job.run();
+          // A fork restarts from its checkpoint, so cached calls replay for free
+          // and only the malformed one is asked again.
+          for (let attempt = 1; ; attempt++) {
+            try {
+              await job.run();
+              break;
+            } catch (error) {
+              if (
+                attempt >= 3 ||
+                !(error instanceof Error) ||
+                error.name !== "ModelOutputError"
+              )
+                throw error;
+              options.onProgress?.(
+                `${pack.id}: ${job.label} retry ${attempt + 1} after ${error.message}`,
+              );
+            }
+          }
         }
       }),
     );
