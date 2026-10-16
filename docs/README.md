@@ -19,6 +19,7 @@
 - [御前消息与精力](architecture/0010-imperial-inbox.md)：多渠道消息、条子、通政司与陆炳风闻。
 - [归纳、深思与开局语体](architecture/0011-ponder-summary-register-terminal.md)：新局阅读免费、每日两点精力、文言三档；终端御案入口与按键见根目录 README。
 - 观战页：`apps/spectator`，导出与名场面说明见 [FEAT-0010](issues/active/playability.md#已做2026-10-06)。
+- [手机御案前端](architecture/web-desk.md)：`/desk.html`、触屏与键盘操作、HTTP 恢复和部署接入边界。
 - [issues](issues/README.md)：当前缺陷和功能；小型整理用提交说明交代。
 
 事后追溯：`issues/archive/`、Git 历史和已关闭 PR。保留调查、取舍和验证结果，不要求日常重读。

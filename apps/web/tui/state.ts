@@ -273,7 +273,7 @@ export function focus(s: State): Transition {
     };
   return { state };
 }
-type Option = {
+export type Option = {
   readonly name: string;
   readonly value: string;
   readonly disabled?: boolean;
@@ -876,7 +876,7 @@ export function keypress(
   }
 }
 
-function options(s: State): readonly Option[] {
+export function options(s: State): readonly Option[] {
   switch (s.screen) {
     case "home":
       return [
@@ -1034,7 +1034,7 @@ export const cellWidth = (text: string): number =>
     (sum, g) => sum + displayWidth(g.segment),
     0,
   );
-function body(d: RulerDocumentView): string[] {
+export function body(d: RulerDocumentView): string[] {
   return d.opened === false
     ? ["（尚未展开；旧局请在菜单中展开）"]
     : [
@@ -1164,11 +1164,11 @@ export function content(
   }
   return { lines, anchor };
 }
-export function documentContext(
-  s: State,
-  width: number,
-): { title: string[]; body: string[] } {
-  const w = Math.max(1, width - 1);
+export function documentData(s: State): {
+  readonly isDocument: boolean;
+  readonly title: string;
+  readonly body: readonly string[];
+} {
   const d =
     s.screen === "editor"
       ? [...documents(s), ...(s.snapshot?.view.archive ?? [])].find(
@@ -1177,20 +1177,34 @@ export function documentContext(
       : currentDocument(s);
   if (d)
     return {
-      title: wrap(`${source(d, " · ")}${d.subject}`, w),
-      body: body(d).flatMap((text) => wrap("    " + text, w)),
+      isDocument: true,
+      title: `${source(d, " · ")}${d.subject}`,
+      body: body(d),
     };
   return {
-    title: ["亲发特旨"],
+    isDocument: false,
+    title: "亲发特旨",
     body: s.editor?.kind
-      ? wrap(
-          "    " +
-            edictText(s, {
-              edict: { kind: s.editor.kind, params: s.editor.params },
-            }),
-          w,
-        )
-      : ["    先选处置办法，再选对象。"],
+      ? [
+          edictText(s, {
+            edict: { kind: s.editor.kind, params: s.editor.params },
+          }),
+        ]
+      : ["先选处置办法，再选对象。"],
+  };
+}
+export function documentContext(
+  s: State,
+  width: number,
+): { title: string[]; body: string[] } {
+  const w = Math.max(1, width - 1);
+  const data = documentData(s);
+  return {
+    title: data.isDocument ? wrap(data.title, w) : [data.title],
+    body:
+      !data.isDocument && !s.editor?.kind
+        ? data.body.map((text) => "    " + text)
+        : data.body.flatMap((text) => wrap("    " + text, w)),
   };
 }
 export function keyHint(s: State): string {
