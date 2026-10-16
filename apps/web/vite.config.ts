@@ -8,6 +8,14 @@ export default defineConfig({
     react(),
     livePlugin(fileURLToPath(new URL("../../", import.meta.url))),
   ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        desk: fileURLToPath(new URL("./desk.html", import.meta.url)),
+      },
+    },
+  },
   server: {
     port: 4173,
     host: "127.0.0.1",
