@@ -326,6 +326,25 @@ describe("ADR 0011", () => {
     ).toEqual(restored.state);
   });
 
+  it("goes on without glosses when the model keeps miscounting them", async () => {
+    const requests: CourtModelRequest[] = [];
+    const s = await startCourtSession({
+      runId: "miscounted-summary",
+      language: "zh-CN",
+      model: async (r) => {
+        requests.push(r);
+        return r.summaries ? '{"summaries":["只有一句"]}' : quiet(r);
+      },
+    });
+    expect(s.failed).toBe(false);
+    expect(requests.filter((r) => r.summaries)).toHaveLength(2);
+    const presented = s.state.audience!.documentIds.map(
+      (id) => s.state.documents[id]!,
+    );
+    expect(presented.every((d) => d.gloss === "")).toBe(true);
+    expect(s.view.audience!.documents.some((d) => "gloss" in d)).toBe(false);
+  });
+
   it("persists the presented batch before summaries, and retries just that call after restart", async () => {
     let error: unknown;
     const s = await startCourtSession({

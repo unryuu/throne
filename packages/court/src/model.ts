@@ -1744,15 +1744,24 @@ async function summarizePresented(ctx: Context, options: Options) {
         : d.text,
     ),
   };
-  const text = await options.model({
-    decisionEpisodeId: `court:summaries:${ctx.state.audience.id}:${documents.map((d) => d.id).join(",")}`,
-    sessionKey: `${options.runId}:summaries`,
-    summaries: true,
-    systemPrompt: summaryPrompt,
-    prompt: JSON.stringify(input),
-    input,
-  });
-  const summaries = parseSummaries(text, documents.length);
+  let summaries: readonly string[];
+  try {
+    const text = await options.model({
+      decisionEpisodeId: `court:summaries:${ctx.state.audience.id}:${documents.map((d) => d.id).join(",")}`,
+      sessionKey: `${options.runId}:summaries`,
+      summaries: true,
+      systemPrompt: summaryPrompt,
+      prompt: JSON.stringify(input),
+      input,
+    });
+    summaries = parseSummaries(text, documents.length);
+  } catch (error) {
+    // Glosses are a courtesy: a batch the model keeps miscounting goes without
+    // them (empty, so it is not re-asked) instead of failing the whole day.
+    if (!(error instanceof Error) || error.name !== "ModelOutputError")
+      throw error;
+    summaries = documents.map(() => "");
+  }
   ctx.commit("information.summarized", {
     items: documents.map((d, i) => ({ documentId: d.id, text: summaries[i]! })),
   });
