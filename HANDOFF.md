@@ -16,7 +16,9 @@
 
 ## 下一步
 
-- 开局包（一组浅白）建完后：补跑 `--verify`，再把 `runs/cache/` 传到服务器的 `/var/lib/throne/runs/cache/`（权限归 throne）。
+- 开局包：前两次建包分别撞上“归纳少一句”和“打断缺理由”，两个 bug 都已修（3220a67、e24379b），建包也加了按分叉重试。第三次建包在后台跑，日志在会话 scratchpad 的 `packs3.log`。看 `runs/cache/packs/` 里有没有 `opening-plain-true-1` 的正式包（不是 `-failed`）；有就把 `runs/cache/` 传到服务器 `/var/lib/throne/runs/cache/`（权限归 throne）。
+- **服务器还是旧代码**：上面两个修复要上线。用户可能正在玩，重启前先问（看 `/var/lib/throne/runs/analytics/events.jsonl` 最后一条的时间）。部署流程：`git archive` 传到 /opt/throne → build → `systemctl restart throne`。
+- 决定：暂时只做这一组浅白开局包，玩的人多了再加。
 - 部署已完成，台账已更新。更新流程见 VPS 台账 vps-02 档案的 throne 一节；配置文件在 `deploy/vps-02/`（nginx 1.20 要用 `listen ... ssl http2`，不支持 `http2 on`）。
 - 试玩反馈之后：滑动手势，以及发小红书前要做的全站花费上限。
 
