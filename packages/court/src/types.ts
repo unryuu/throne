@@ -1,3 +1,4 @@
+import type { RoutineEntry } from "./routine-library.ts";
 import type { JsonObject, SimTime } from "@throne/shared-types";
 
 export type LocationId = "beijing" | "hangzhou" | "taizhou";
@@ -268,6 +269,7 @@ export type CourtState = {
 };
 
 export type IntelligenceFact = {
+  readonly routine?: RoutineEntry;
   readonly id: string;
   readonly day: number;
   readonly channel: "bureau" | "rumor";

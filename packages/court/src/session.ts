@@ -1,3 +1,4 @@
+import type { RoutineEntry, RoutineLibraryInput } from "./routine-library.ts";
 import { courtSettingsSchema, type CourtSettings } from "./preferences.ts";
 import type { SimulationRecord } from "@throne/shared-types";
 import { InMemoryEventStore, SimulationKernel } from "@throne/sim-core";
@@ -50,6 +51,7 @@ const playerEvents = [
 export async function startCourtSession(options: {
   runId: string;
   seed?: string;
+  routineLibrary?: RoutineLibraryInput;
   openingPackId?: string;
   language: string;
   model: CourtModel;
@@ -108,10 +110,21 @@ export async function startCourtSession(options: {
     }
   };
   const initial = createInitialState(options.runId, options.decisionBudget);
+  const librarySource = options.routineLibrary;
+  let loadedLibrary: readonly RoutineEntry[] | undefined;
   const domain = createCourtModel({
     runId: options.runId,
     language: options.language,
     model,
+    ...(librarySource
+      ? {
+          routineLibrary:
+            typeof librarySource === "function"
+              ? async () =>
+                  (loadedLibrary ??= structuredClone(await librarySource()))
+              : structuredClone(librarySource),
+        }
+      : {}),
     ...(options.fullLog ? { fullLog: true } : {}),
   });
   const store = new InMemoryEventStore();

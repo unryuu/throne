@@ -1,3 +1,4 @@
+import { loadRoutineLibrary } from "./routine-library.ts";
 import { randomUUID } from "node:crypto";
 import type { LiveCallTrace } from "@throne/agent-runtime/live";
 import { describe, expect, it } from "vitest";
@@ -153,6 +154,7 @@ describe("opening packs", () => {
           runId: randomUUID(),
           language: "zh-CN",
           records: checkpoint,
+          routineLibrary: (await loadRoutineLibrary()).entries,
           fullLog: true,
           model: service.model(traces, new Set()),
         });

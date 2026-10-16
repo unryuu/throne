@@ -1,3 +1,4 @@
+import { loadRoutineEntries } from "./routine-library.ts";
 import { cachedCall, fingerprint } from "@throne/agent-runtime/live";
 import { chooseOpeningPack, type OpeningPack } from "./opening-pack-store.ts";
 import { randomUUID } from "node:crypto";
@@ -197,6 +198,7 @@ export class CourtService {
     const calls: LiveCallTrace[] = [];
     let initialError: string | undefined;
     const session = await startCourtSession({
+      routineLibrary: loadRoutineEntries,
       runId: id,
       settings: preferences,
       ...(pack
@@ -312,6 +314,7 @@ export class CourtService {
     const busy = new Set<string>();
     this.progress.set(id, busy);
     const session = await startCourtSession({
+      routineLibrary: loadRoutineEntries,
       runId: id,
       language: saved.locale,
       model: this.model(calls, busy),

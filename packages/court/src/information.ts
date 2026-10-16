@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RoutineEntry } from "./routine-library.ts";
 import { dayOf, roll } from "./calendar.ts";
 import { countyIds, ids } from "./jiajing.ts";
 import type { CourtState, IntelligenceFact } from "./types.ts";
@@ -36,12 +37,43 @@ export function generateFacts(
   day: number,
   channel: "bureau" | "rumor",
   count: number,
+  library: readonly RoutineEntry[] = [],
 ): readonly IntelligenceFact[] {
+  const used = new Set(
+    state.information?.facts.flatMap((f) =>
+      f.routine ? [f.routine.key] : [],
+    ) ?? [],
+  );
+  const month = ["四月", "五月", "六月"][Math.floor(day / 30)];
+  const available = library.filter(
+    (entry) =>
+      !used.has(entry.key) &&
+      (entry.season === "不限" || entry.season === month),
+  );
   return Array.from({ length: count }, (_, index): IntelligenceFact => {
     const key = `information:${channel}:${day}:${index}`;
     const pick = (suffix: string) => roll(state.seed, `${key}:${suffix}`);
     const routine = channel === "bureau" && pick("category") < 0.45;
     if (routine) {
+      const eligible = available.filter((entry) => !used.has(entry.key));
+      if (eligible.length) {
+        const entry = structuredClone(
+          eligible[Math.floor(pick("library") * eligible.length)]!,
+        );
+        used.add(entry.key);
+        return {
+          id: `${channel}-${day}-${index}`,
+          day,
+          channel,
+          category: "routine",
+          true: true,
+          vague: false,
+          actual: entry.text,
+          claim: entry.text,
+          titles: [entry.title],
+          routine: entry,
+        };
+      }
       const topics = [
         "九边军报",
         "钦天监天象",

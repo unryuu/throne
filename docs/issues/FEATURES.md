@@ -1,5 +1,7 @@
 # 当前功能
 
+已完成：[杂事奏疏库接入](archive/routine-library.md)。
+
 实现中：[开局包与调用指纹库](active/opening-packs.md)（不含杂事库）。
 
 已完成：[FEAT-0012 归纳、深思与开局语体](active/ponder-summary-register.md)。

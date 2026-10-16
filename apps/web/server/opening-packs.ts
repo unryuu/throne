@@ -1,3 +1,4 @@
+import { loadRoutineEntries } from "./routine-library.ts";
 import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -157,10 +158,12 @@ export async function buildOpeningPack(options: {
     options.modelFactory,
     options.modelIdentity,
   );
+  const routineLibrary = await loadRoutineEntries();
   const session = (records?: readonly SimulationRecord[]) =>
     startCourtSession({
       runId: randomUUID(),
       seed: pack.seed,
+      routineLibrary,
       openingPackId: pack.id,
       settings: pack.settings,
       language: pack.locale,

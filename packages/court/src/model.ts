@@ -1,3 +1,4 @@
+import type { RoutineLibraryInput } from "./routine-library.ts";
 import {
   courtSettingsSchema,
   registerInstruction,
@@ -122,6 +123,7 @@ type Options = {
   readonly language: string;
   readonly model: CourtModel;
   readonly fullLog?: boolean;
+  readonly routineLibrary?: RoutineLibraryInput;
 };
 
 class Context {
@@ -1643,7 +1645,7 @@ function dailyInformation(ctx: Context) {
   if (next < ctx.state.endsAt) ctx.later("information.daily", next, {});
 }
 
-function prepareBureau(ctx: Context, schedule = true) {
+async function prepareBureau(ctx: Context, options: Options, schedule = true) {
   const day = Math.floor(ctx.time / 12);
   if (ctx.state.information!.bureauDays.includes(day)) {
     if (schedule) openAudience(ctx);
@@ -1662,8 +1664,12 @@ function prepareBureau(ctx: Context, schedule = true) {
     ),
   );
   const count = Math.max(1, target - pending);
+  const library =
+    typeof options.routineLibrary === "function"
+      ? await options.routineLibrary()
+      : options.routineLibrary;
   ctx.commit("information.bureau_prepared", {
-    facts: j(generateFacts(ctx.state, day, "bureau", count)),
+    facts: j(generateFacts(ctx.state, day, "bureau", count, library)),
   });
   if (schedule) ctx.later("information.compose", ctx.time, { day });
 }
@@ -1674,25 +1680,46 @@ async function composeBureau(ctx: Context, options: Options, day: number) {
     (f) => f.day === day && f.channel === "bureau",
   );
   if (!facts.length) throw new Error("通政司缺少已提交的事实清单");
-  const input = { facts: j(facts) };
-  const text = await options.model({
-    decisionEpisodeId: `court:bureau:${day}`,
-    sessionKey: `${options.runId}:bureau`,
-    bureau: true,
-    systemPrompt:
-      bureauPrompt + "\n" + registerInstruction(ctx.state.settings?.register),
-    prompt: JSON.stringify({
-      writingStyle: registerInstruction(ctx.state.settings?.register),
-      date: formatCourtTime(ctx.time, "zh-CN"),
-      facts: facts.map((f) => ({
-        id: f.id,
-        kind: f.category === "routine" ? "朝政杂事" : "浙江消息",
-        gist: f.claim,
-      })),
-    }),
-    input,
-  });
-  for (const report of parseBureau(text, facts))
+  const modelFacts = facts.filter((f) => !f.routine);
+  const input = { facts: j(modelFacts) };
+  const text = modelFacts.length
+    ? await options.model({
+        decisionEpisodeId: `court:bureau:${day}`,
+        sessionKey: `${options.runId}:bureau`,
+        bureau: true,
+        systemPrompt:
+          bureauPrompt +
+          "\n" +
+          registerInstruction(ctx.state.settings?.register),
+        prompt: JSON.stringify({
+          writingStyle: registerInstruction(ctx.state.settings?.register),
+          date: formatCourtTime(ctx.time, "zh-CN"),
+          facts: modelFacts.map((f) => ({
+            id: f.id,
+            kind: f.category === "routine" ? "朝政杂事" : "浙江消息",
+            gist: f.claim,
+          })),
+        }),
+        input,
+      })
+    : undefined;
+  const written = new Map(
+    (text === undefined ? [] : parseBureau(text, modelFacts)).map((report) => [
+      report.factId,
+      report,
+    ]),
+  );
+  for (const fact of facts) {
+    const entry = fact.routine;
+    const modern = ctx.state.settings?.register === "modern";
+    const report = entry
+      ? {
+          factId: fact.id,
+          subject: modern ? entry.modernTitle : entry.title,
+          text: modern ? entry.modernText : entry.text,
+          gloss: entry.gloss,
+        }
+      : written.get(fact.id)!;
     sendDocument(ctx, {
       id: nextDocumentId(ctx.state, "通政司"),
       kind: "bureau",
@@ -1700,6 +1727,7 @@ async function composeBureau(ctx: Context, options: Options, day: number) {
       toIds: [ids.ruler],
       ...report,
     });
+  }
   ctx.commit("information.bureau_composed", { day });
 }
 
@@ -1766,7 +1794,14 @@ async function handlePonder(
     }),
   );
   spendImperial(ctx, 1, "ponder");
-  ctx.commit("court.pondered", { documentId, ...ponder });
+  const factId = ctx.state.documents[documentId]!.factId;
+  const authorNote = ctx.state.information?.facts.find((f) => f.id === factId)
+    ?.routine?.authorNote;
+  ctx.commit("court.pondered", {
+    documentId,
+    ...ponder,
+    ...(authorNote ? { authorNote } : {}),
+  });
 }
 
 export function createCourtModel(options: Options): DomainModel<CourtState> {
@@ -1849,7 +1884,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
               ctx.time === ctx.state.nextAudienceAt &&
               !secluded(ctx.state, ctx.time)
             )
-              prepareBureau(ctx);
+              await prepareBureau(ctx, options);
             else openAudience(ctx);
             break;
           case "court.ponder":
@@ -1877,7 +1912,7 @@ export function createCourtModel(options: Options): DomainModel<CourtState> {
                 ctx.state.audience.interruption.admitted
               )
                 throw new Error("There is no interruption to admit");
-              prepareBureau(ctx, false);
+              await prepareBureau(ctx, options, false);
               ctx.commit("information.admission_preparing", {});
               ctx.later("information.compose", ctx.time, {
                 day: Math.floor(ctx.time / 12),

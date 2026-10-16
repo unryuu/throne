@@ -111,7 +111,9 @@ function documentView(
     subject: doc.subject,
     text: !opened || folded ? "" : doc.text,
     ...(state.information ? { opened } : {}),
-    ...(opened && doc.gloss !== undefined ? { gloss: doc.gloss } : {}),
+    ...(opened && state.settings?.summaries !== false && doc.gloss !== undefined
+      ? { gloss: doc.gloss }
+      : {}),
     ...(opened && doc.ponders ? { ponders: doc.ponders } : {}),
     arrivedAt: doc.readyForRulerAt!,
     folded,
