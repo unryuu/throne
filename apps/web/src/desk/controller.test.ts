@@ -79,6 +79,43 @@ async function fixture() {
 }
 
 describe("browser court effect runner", () => {
+  it("holds the new reign until the enthronement ceremony ends", async () => {
+    const f = await fixture();
+    let end!: () => void;
+    const controller = new DeskController({
+      ...f.deps,
+      enthrone: () => new Promise<void>((resolve) => (end = resolve)),
+    });
+    await controller.choose(0);
+    const pending = controller.choose(1);
+    await vi.waitFor(() =>
+      expect(f.request.mock.calls.some(([path]) => path === "")).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(controller.getSnapshot().state.snapshot).toBeUndefined();
+    expect(controller.getSnapshot().busy).toBe(true);
+    end();
+    await pending;
+    expect(controller.getSnapshot().state.screen).toBe("desk");
+  });
+
+  it("acts on the focused paper from the desk without visiting the action page", async () => {
+    const f = await fixture();
+    await f.start();
+    const index = f
+      .state()
+      .snapshot!.view.audience!.documents.findIndex(
+        (d) => d.hasDraft || d.draft,
+      );
+    await f.controller.choose(index);
+    await f.controller.paperAction("hold");
+    expect(f.state().screen).toBe("desk");
+    expect(f.state().cursor).toBe(index);
+    expect(f.state().choices[currentDocument(f.state())!.id]?.disposition).toBe(
+      "hold",
+    );
+  });
+
   it("creates a plain game, sends pack exclusions, opens the focused paper, and remembers the save", async () => {
     const f = await fixture();
     await f.start();
@@ -97,16 +134,16 @@ describe("browser court effect runner", () => {
     expect(f.state().runs).toHaveLength(1);
   });
 
-  it("loads a save, focuses the clicked paper before Enter, and shows a paid ponder without repeating it", async () => {
+  it("loads a save, a tap only focuses and opens the paper, and an inline ponder is paid once", async () => {
     const f = await fixture();
     const saved = await f.service.create("zh-CN");
     await f.controller.load(saved.id);
     await f.controller.choose(1);
     const doc = currentDocument(f.state())!;
-    expect(f.state().screen).toBe("menu");
+    expect(f.state().screen).toBe("desk");
     expect(doc.id).toBe(saved.view.audience!.documents[1]!.id);
     expect(doc.opened).toBe(true);
-    await f.choose("ponder");
+    await f.controller.paperAction("ponder");
     expect(f.state().screen).toBe("desk");
     expect(currentDocument(f.state())?.ponders).toHaveLength(1);
     expect(f.state().snapshot?.view.energy).toBe(1);
@@ -186,7 +223,7 @@ describe("browser court effect runner", () => {
         throw new Error("网络断开");
       },
     );
-    await f.choose("ponder");
+    await f.controller.paperAction("ponder");
     expect(f.state().error).toBe("网络断开");
     await f.controller.key("enter");
     expect(f.state().error).toBeUndefined();
@@ -388,7 +425,7 @@ describe("full-screen writing flow", () => {
         (d) => d.hasDraft || d.draft,
       );
     await f.controller.choose(index);
-    await f.choose("custom");
+    await f.controller.paperAction("custom");
     await f.choose("reject");
     await f.choose("write");
     expect(f.controller.getSnapshot().input?.effect.purpose).toBe("edict");

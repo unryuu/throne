@@ -141,7 +141,7 @@ const defaultChoice = (d: RulerDocumentView): RescriptItem => ({
   documentId: d.id,
   disposition: hasDraft(d) ? "follow_draft" : "hold",
 });
-const disposition = (s: State, d: RulerDocumentView) =>
+export const disposition = (s: State, d: RulerDocumentView) =>
   s.choices[d.id]?.disposition ?? defaultChoice(d).disposition;
 const label = (kind: EdictKind) => t(`court.edict.${kind}` as MessageKey);
 

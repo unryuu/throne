@@ -37,13 +37,14 @@ export function atmosphereLines(time?: number): readonly string[] {
   return [...always, ...(byMonth[month] ?? [])];
 }
 
-/** A line changes every four seconds; `seed` keeps each wait from opening alike. */
+/** A line changes every four seconds by default; `seed` keeps each wait from opening alike. */
 export function atmosphereLine(
   lines: readonly string[],
   elapsedMs: number,
   seed: number,
+  everyMs = 4000,
 ): string {
-  const index = (seed + Math.floor(elapsedMs / 4000)) % lines.length;
+  const index = (seed + Math.floor(elapsedMs / everyMs)) % lines.length;
   return lines[index]!;
 }
 

@@ -16,6 +16,7 @@ const controller = new DeskController(
   {
     request,
     operationId: () => crypto.randomUUID(),
+    enthrone: () => new Promise((resolve) => setTimeout(resolve, 6000)),
     packs: () => memory.packs,
     remember: (snapshot) => {
       memory = remember(memory, snapshot, storage);

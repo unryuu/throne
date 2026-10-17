@@ -1,9 +1,11 @@
 import { formatCourtTime } from "@throne/court";
 import type { CourtReview, CourtSnapshot } from "../../server/court-service.ts";
 import {
+  currentDocument,
   focus,
   initialState,
   inputResult,
+  menu,
   options,
   receive,
   type Effect,
@@ -33,6 +35,8 @@ type Dependencies = {
   readonly packs: () => readonly string[];
   readonly operationId: () => string;
   readonly pause?: () => Promise<void>;
+  /** A short ceremony before a new reign, so a cached opening does not flash past. */
+  readonly enthrone?: () => Promise<void>;
 };
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -92,11 +96,28 @@ export class DeskController {
       const selected = selectOption(this.view.state, index);
       if (selected.state === this.view.state) return;
       await this.dispatch(selected);
+      // Tapping a paper only focuses it; its actions sit under the opened text.
+      if (
+        ["desk", "archive"].includes(this.view.state.screen) &&
+        currentDocument(this.view.state)
+      )
+        return;
       if (
         !this.view.state.error &&
         this.view.state.snapshot?.status !== "failed"
       )
         await this.dispatch(press(this.view.state, key));
+    });
+  }
+  /** Runs one 文书处置 action on the focused paper without leaving the desk. */
+  async paperAction(value: string): Promise<void> {
+    if (this.view.input || this.view.busy) return;
+    await this.run(async () => {
+      const opened = press(this.view.state, "enter").state;
+      if (opened.screen !== "menu") return;
+      const index = menu(opened).findIndex((o) => o.value === value);
+      if (index < 0 || menu(opened)[index]!.disabled) return;
+      await this.dispatch(press({ ...opened, cursor: index }, "enter"));
     });
   }
   async shortcut(
@@ -227,12 +248,15 @@ export class DeskController {
       switch (effect.type) {
         case "create":
           this.progressId = this.deps.operationId();
-          next = await this.deps.request<CourtSnapshot>("", {
-            locale: "zh-CN",
-            settings: effect.settings,
-            operationId: this.progressId,
-            excludePackIds: this.deps.packs(),
-          });
+          [next] = await Promise.all([
+            this.deps.request<CourtSnapshot>("", {
+              locale: "zh-CN",
+              settings: effect.settings,
+              operationId: this.progressId,
+              excludePackIds: this.deps.packs(),
+            }),
+            this.deps.enthrone?.(),
+          ]);
           break;
         case "load":
           this.progressId = effect.id;

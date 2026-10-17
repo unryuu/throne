@@ -4,7 +4,9 @@ import { courtGlossary, createTranslator } from "@throne/localization";
 import {
   body,
   currentDocument,
+  disposition,
   documentData,
+  menu,
   options,
   reservedEnergy,
   safeText,
@@ -135,7 +137,7 @@ function ScreenContent({ state }: { readonly state: State }) {
             />
           </div>
           <p className="muted">
-            还可谈 {view?.audience?.roundsLeft ?? 0} 轮；同次仅首轮耗 1 点。
+            还可谈 {view?.audience?.roundsLeft ?? 0} 轮，总共消耗 1 点。
           </p>
         </>
       );
@@ -186,7 +188,7 @@ function ScreenContent({ state }: { readonly state: State }) {
       return (
         <>
           <p>
-            点选一项即打开或确认。返回收起当前页面；退朝要确认后才提交，闭关可选天数。长文直接上下滚动。
+            点一份文书即展开，处置按钮在正文下方。返回收起当前页面；退朝要确认后才提交，闭关可选天数。长文直接上下滚动。
           </p>
           <p>
             电脑可用方向键、Enter、Esc、hjkl。PageUp / PageDown 翻阅，Home / End
@@ -490,6 +492,11 @@ export function DeskApp({
                       {doc && (
                         <article className="paper inline-paper">
                           <Paragraphs lines={body(doc)} />
+                          <PaperActions
+                            state={state}
+                            busy={busy}
+                            controller={controller}
+                          />
                         </article>
                       )}
                     </div>
@@ -515,15 +522,14 @@ export function DeskApp({
           )}
         </main>
         <div className="status-line" role="status" aria-live="polite">
-          {busy
-            ? ""
-            : state.snapshot
-              ? "已完成步骤自动存档 · 暂定处置退朝时提交"
-              : "点按进入 · 支持键盘"}
+          {busy && busySince !== undefined ? (
+            <WaitingLine since={busySince} time={state.snapshot?.view.time} />
+          ) : state.snapshot ? (
+            ""
+          ) : (
+            "点按进入 · 支持键盘"
+          )}
         </div>
-        {busy && busySince !== undefined && (
-          <WaitingVeil since={busySince} time={state.snapshot?.view.time} />
-        )}
         <nav className="thumb-bar" aria-label="御案快捷操作">
           {thumbActions(state).map((action) => (
             <button
@@ -560,8 +566,57 @@ export function DeskApp({
   );
 }
 
-/** Short waits stay quiet; longer ones show the palace and how long it has been. */
-function WaitingVeil({
+const chosenBy: Record<string, string> = {
+  follow: "follow_draft",
+  hold: "hold",
+  custom: "custom",
+};
+/** The 文书处置 choices for the focused paper, laid out under its text for thumbs. */
+function PaperActions({
+  state,
+  busy,
+  controller,
+}: {
+  readonly state: State;
+  readonly busy: boolean;
+  readonly controller: DeskController;
+}) {
+  const doc = currentDocument(state);
+  if (!doc) return null;
+  const current = disposition(state, doc);
+  const actions = menu({
+    ...state,
+    screen: "menu",
+    returnScreen: state.screen,
+  });
+  if (!actions.length) return null;
+  return (
+    <div className="paper-actions" aria-label="文书处置">
+      {actions.map((action) => {
+        const [label, hint] = action.name.split(" — ");
+        const chosen = chosenBy[action.value] === current;
+        return (
+          <button
+            key={action.value}
+            className={chosen ? "chosen" : ""}
+            aria-pressed={action.value in chosenBy ? chosen : undefined}
+            disabled={busy || Boolean(action.disabled)}
+            onClick={() => void controller.paperAction(action.value)}
+          >
+            <strong>
+              {label}
+              {chosen ? " ✓" : ""}
+            </strong>
+            {hint && <span>{hint}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Short waits stay quiet; longer ones show one small line of palace life and the time waited. */
+function WaitingLine({
   since,
   time,
 }: {
@@ -575,14 +630,14 @@ function WaitingVeil({
     return () => clearInterval(timer);
   }, []);
   const waited = now - since;
-  if (waited < 700) return null;
-  const line = atmosphereLine(atmosphereLines(time), waited, seed);
+  if (waited < 400) return null;
+  const line = atmosphereLine(atmosphereLines(time), waited - 400, seed, 2800);
   return (
-    <div className="waiting-veil" role="status" aria-live="polite">
-      <p key={line} className="waiting-line">
+    <>
+      <span key={line} className="waiting-line">
         {line}
-      </p>
-      <p className="waiting-time">{waitedText(waited)}</p>
-    </div>
+      </span>
+      <span className="waiting-time">{waitedText(waited)}</span>
+    </>
   );
 }
