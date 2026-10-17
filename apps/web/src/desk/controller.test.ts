@@ -64,7 +64,7 @@ async function fixture() {
     controller.choose(options(state()).findIndex((o) => o.value === value));
   const start = async () => {
     await choose("new");
-    await choose("start");
+    await choose("plain");
   };
   return {
     service,
@@ -245,8 +245,8 @@ describe("browser court effect runner", () => {
     vi.useFakeTimers();
     try {
       await controller.choose(0);
-      const pending = controller.choose(4);
-      await controller.choose(4);
+      const pending = controller.choose(1);
+      await controller.choose(1);
       expect(controller.getSnapshot().busySince).toBe(Date.now());
       await vi.advanceTimersByTimeAsync(5000);
       finish(ready);

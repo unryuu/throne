@@ -25,6 +25,7 @@ import {
   keyHint,
   keypress,
   menu,
+  options,
   receive,
   render,
   submission,
@@ -377,19 +378,10 @@ describe("terminal court decisions", () => {
     const { root, snapshot } = await game();
     const runs = await listRuns(root);
     expect(runs.map((r) => r.id)).toEqual([snapshot.id]);
-    let s = advance(
-      initialState(runs),
-      "enter",
-      "up",
-      "up",
-      "enter",
-      "up",
-      "enter",
-      "down",
-    );
+    let s = advance(initialState(runs), "enter", "down", "down");
     expect(keypress(s, "enter").effect).toEqual({
       type: "create",
-      settings: { register: "modern", summaries: false },
+      settings: { register: "modern", summaries: true },
     });
     s = advance(initialState(runs), "down");
     expect(keypress(s, "enter").effect).toEqual({
@@ -444,16 +436,29 @@ describe("terminal rendering", () => {
 });
 
 describe("terminal usability", () => {
-  it("starts with one confirmation, and returns to ascend after selecting a register", () => {
+  it("starts on the default register, and choosing a register ascends with summaries on", () => {
     const s = keypress(initialState(), "enter").state;
-    expect(s.cursor).toBe(4);
+    expect(s.cursor).toBe(0);
+    expect(options(s).map((o) => o.value)).toEqual([
+      "classical",
+      "plain",
+      "modern",
+    ]);
     expect(keypress(s, "enter").effect).toEqual({
       type: "create",
       settings: { register: "classical", summaries: true },
     });
-    const modern = advance(s, "up", "up", "enter");
-    expect(modern.cursor).toBe(4);
-    expect(modern.settings.register).toBe("modern");
+    const modern = keypress(advance(s, "down", "down"), "enter");
+    expect(modern.state.settings.register).toBe("modern");
+    expect(modern.effect).toEqual({
+      type: "create",
+      settings: { register: "modern", summaries: true },
+    });
+    const plain = keypress(
+      { ...initialState(), settings: { register: "plain", summaries: false } },
+      "enter",
+    ).state;
+    expect(plain.cursor).toBe(1);
   });
   it("keeps retirement last and nests secondary screens under More", async () => {
     const { state } = await game();
@@ -554,7 +559,7 @@ describe("terminal usability", () => {
     expect(keyHint(help)).toContain("Esc / ? 返回");
     expect(keyHint({ ...state, screen: "confirm" })).toContain("⏎ 提交");
     expect(keyHint({ ...state, screen: "confirm" })).not.toContain("菜单");
-    expect(keyHint({ ...state, screen: "settings" })).toContain("勾选/登基");
+    expect(keyHint({ ...state, screen: "settings" })).toContain("⏎ 登基");
   });
   it("separates editable input from context, and blank or Escape cancels all input purposes", async () => {
     const { state, settle } = await game();

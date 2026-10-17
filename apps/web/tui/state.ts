@@ -98,6 +98,7 @@ export type Key =
   | "end"
   | "home"
   | "quit";
+const registers = ["classical", "plain", "modern"] as const;
 export const initialState = (runs: readonly RunChoice[] = []): State => ({
   screen: "home",
   cursor: 0,
@@ -691,32 +692,27 @@ export function keypress(
   switch (s.screen) {
     case "home": {
       if (s.cursor === 0)
-        return { state: { ...s, screen: "settings", cursor: 4 } };
+        return {
+          state: {
+            ...s,
+            screen: "settings",
+            cursor: Math.max(0, registers.indexOf(s.settings.register)),
+          },
+        };
       const run = s.runs[s.cursor - 1];
       return run && !run.error
         ? { state: s, effect: { type: "load", id: run.id } }
         : { state: { ...s, notice: run?.error ?? "" } };
     }
-    case "settings":
-      if (s.cursor < 3)
-        return {
-          state: {
-            ...s,
-            settings: {
-              ...s.settings,
-              register: (["classical", "plain", "modern"] as const)[s.cursor]!,
-            },
-            cursor: 4,
-          },
-        };
-      if (s.cursor === 3)
-        return {
-          state: {
-            ...s,
-            settings: { ...s.settings, summaries: !s.settings.summaries },
-          },
-        };
-      return { state: s, effect: { type: "create", settings: s.settings } };
+    case "settings": {
+      const register = registers[s.cursor];
+      if (!register) return { state: s };
+      const settings = { register, summaries: true };
+      return {
+        state: { ...s, settings },
+        effect: { type: "create", settings },
+      };
+    }
     case "more": {
       const item = options(s)[s.cursor];
       if (!item) return { state: s };
@@ -888,17 +884,10 @@ export function options(s: State): readonly Option[] {
         })),
       ];
     case "settings":
-      return [
-        ...(["classical", "plain", "modern"] as const).map((r) => ({
-          value: r,
-          name: `${s.settings.register === r ? "●" : "○"} ${t(`court.register.${r}`)}`,
-        })),
-        {
-          value: "summaries",
-          name: `${s.settings.summaries ? "☑" : "□"} 奏疏归纳 — 正文下一句白话`,
-        },
-        { value: "start", name: "登基 · 开始新局" },
-      ];
+      return registers.map((r) => ({
+        value: r,
+        name: t(`court.register.${r}`),
+      }));
     case "desk":
       return [
         ...documents(s).map((d) => ({
@@ -1136,8 +1125,7 @@ export function content(
     if (!lines.length) add("尚未发旨。");
   } else {
     if (s.screen === "home") add("西苑门开。新开一局，或接着昨日的御案。");
-    if (s.screen === "settings")
-      add("直接按 ⏎ 使用默认设置；↑ 调整语体与归纳。");
+    if (s.screen === "settings") add("选一种语体，按 ⏎ 即登基。");
     if (s.screen === "editor")
       add(
         `拟旨 · ${s.editor!.step === "kind" ? "处置办法" : s.editor!.step === "county" ? "选县" : s.editor!.step === "agent" ? "派谁查" : s.editor!.step === "text" ? "确认旨意" : "选大臣"}（← 返回 / 取消）`,
@@ -1214,7 +1202,7 @@ export function keyHint(s: State): string {
     case "home":
       return "↑↓ 选择  ⏎ 进入  ? 小抄  Ctrl+C 退出";
     case "settings":
-      return "↑↓ 选择  ⏎ 勾选/登基  ← 返回  ? 小抄";
+      return "↑↓ 选语体  ⏎ 登基  ← 返回  ? 小抄";
     case "menu":
     case "editor":
       return "↑↓ 选择  ⏎ 确定  ← 返回  PgUp/Dn 看文书";

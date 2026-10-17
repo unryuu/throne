@@ -75,13 +75,9 @@ describe("DOM desk", () => {
         new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }),
       ),
     );
-    expect(controller.getSnapshot().state.cursor).toBe(3);
-    await act(async () =>
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-      ),
-    );
-    expect(controller.getSnapshot().state.settings.summaries).toBe(false);
+    expect(controller.getSnapshot().state.cursor).toBe(0);
+    expect(host.textContent).not.toContain("奏疏归纳");
+    expect(host.textContent).not.toContain("开始新局");
     await act(async () =>
       window.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),

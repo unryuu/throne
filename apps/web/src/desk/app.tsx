@@ -73,7 +73,7 @@ function ScreenContent({ state }: { readonly state: State }) {
     case "settings":
       return (
         <p className="muted">
-          选一种读起来顺手的语体，再登基。默认浅白，附一句白话归纳。
+          选一种读起来顺手的语体，点下即登基。每份文书下都附一句白话归纳。
         </p>
       );
     case "desk":
