@@ -470,10 +470,15 @@ export function DeskApp({
                           1));
                   const disabled =
                     ("disabled" in option && option.disabled) || talkBlocked;
-                  const doc =
+                  const focused =
                     active && ["desk", "archive"].includes(state.screen)
                       ? currentDocument(state)
                       : undefined;
+                  // A new game opens a focused paper by itself; show it once the text arrives.
+                  const doc =
+                    focused?.opened === false && view?.settings
+                      ? undefined
+                      : focused;
                   return (
                     <div className="option-group" key={option.value}>
                       <button

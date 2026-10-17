@@ -296,7 +296,8 @@ export function menu(s: State): readonly Option[] {
     ...(hasDraft(d) && !(s.screen === "menu" && s.returnScreen === "archive")
       ? [{ name: "依拟 — 按内阁拟好的意思办", value: "follow" }]
       : []),
-    ...(s.snapshot?.view.settings
+    // One ponder per paper; once written it stays in the paper's text.
+    ...(s.snapshot?.view.settings && !d.ponders?.length
       ? [
           {
             name: "深思 ·1 — 想想此事的门道",

@@ -152,20 +152,35 @@ describe("terminal court decisions", () => {
 
   it("charges pondering through CourtService, blocks all paid options at zero, but still allows reading", async () => {
     const { state, settle } = await game();
+    const ponder = (s: State) => {
+      const m = keypress(s, "right").state;
+      return keypress(
+        { ...m, cursor: menu(m).findIndex((o) => o.value === "ponder") },
+        "enter",
+      );
+    };
     let s = await settle(focus(state));
     expect(s.snapshot!.view.energy).toBe(2);
     for (const energy of [1, 0]) {
-      s = await settle(keypress(keypress(s, "right").state, "enter"));
+      s = await settle(ponder(s));
       expect(s.snapshot?.error).toBeUndefined();
       expect(s.snapshot!.view.energy).toBe(energy);
+      expect(currentDocument(s)!.ponders).toHaveLength(1);
+      // Each paper is pondered once; the option is gone afterwards.
+      expect(
+        menu(keypress(s, "right").state).some((m) => m.value === "ponder"),
+      ).toBe(false);
+      if (energy) s = await settle(keypress(s, "down"));
     }
-    expect(currentDocument(s)!.ponders).toHaveLength(2);
-    const blocked = keypress(s, "right").state;
-    expect(menu(blocked)[0]?.disabled).toBe(true);
-    expect(keypress(blocked, "enter").effect).toBeUndefined();
     const nextDoc = await settle(keypress(s, "down"));
     expect(currentDocument(nextDoc)!.opened).toBe(true);
     expect(nextDoc.snapshot!.view.energy).toBe(0);
+    const blocked = keypress(nextDoc, "right").state;
+    const index = menu(blocked).findIndex((m) => m.value === "ponder");
+    expect(menu(blocked)[index]?.disabled).toBe(true);
+    expect(
+      keypress({ ...blocked, cursor: index }, "enter").effect,
+    ).toBeUndefined();
     expect(
       keypress(select(s, s.snapshot!.view.audience!.documents.length), "enter")
         .effect,
