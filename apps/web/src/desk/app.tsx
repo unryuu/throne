@@ -455,6 +455,14 @@ export function DeskApp({
               <h2>这一步未完成</h2>
               <p>{state.error ?? state.snapshot?.error ?? "服务步骤失败"}</p>
               <p>暂定处置仍保留。可重试恢复。</p>
+              {[...(view?.audience?.documents ?? []), ...(view?.archive ?? [])]
+                .filter((doc) => doc.text && doc.opened !== false)
+                .map((doc) => (
+                  <details key={doc.id}>
+                    <summary>{doc.subject}</summary>
+                    <p className="paper-text">{doc.text}</p>
+                  </details>
+                ))}
             </section>
           ) : (
             <>

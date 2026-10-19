@@ -66,6 +66,39 @@ async function ready(): Promise<CourtSnapshot> {
 }
 
 describe("DOM desk", () => {
+  it("keeps already opened papers readable during a budget pause without revealing unopened papers", async () => {
+    const snapshot = await ready();
+    const first = snapshot.view.audience!.documents[0]!;
+    const next: CourtSnapshot = {
+      ...snapshot,
+      status: "failed",
+      error: "今日生成额度已用完，明日继续。",
+      view: {
+        ...snapshot.view,
+        audience: {
+          ...snapshot.view.audience!,
+          documents: [
+            { ...first, text: "已读奏疏正文", opened: true },
+            {
+              ...first,
+              id: "unopened",
+              subject: "未打开的文书",
+              text: "不可泄露的正文",
+              opened: false,
+            },
+          ],
+        },
+      },
+    };
+    await mount(receive(initialState(), next));
+    expect(host.textContent).toContain("今日生成额度已用完");
+    expect(host.querySelector("details")?.textContent).toContain(
+      "已读奏疏正文",
+    );
+    expect(host.textContent).not.toContain("不可泄露的正文");
+    expect(button("重试")).toBeDefined();
+  });
+
   it("opens settings by tap and supports arrow/Enter/Escape without losing native button activation", async () => {
     const controller = await mount();
     await click("新开一局");

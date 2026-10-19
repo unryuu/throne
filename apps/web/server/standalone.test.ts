@@ -225,6 +225,42 @@ describe("standalone boundary", () => {
     ).toBe(400);
   });
 
+  it("accepts shared-link page navigation while retaining cross-site API and login rejection", async () => {
+    const s = await setup(true);
+    const logged = await s.login();
+    const headers = {
+      Cookie: logged.headers.get("set-cookie")!.split(";")[0]!,
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "document",
+    };
+    expect((await s.request("/", { headers })).status).toBe(200);
+    expect((await s.request("/", { method: "HEAD", headers })).status).toBe(
+      200,
+    );
+    expect((await s.request("/api/court/saved", { headers })).status).toBe(403);
+    expect(
+      (
+        await s.request("/auth/login", {
+          method: "POST",
+          headers,
+          body: "password=test-password",
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await s.request("/", {
+          headers: {
+            ...headers,
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+          },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
   it("throttles wrong passwords globally and rejects cross-site login", async () => {
     const s = await setup();
     for (let i = 0; i < 5; i++)

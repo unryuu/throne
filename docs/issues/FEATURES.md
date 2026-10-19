@@ -1,5 +1,7 @@
 # 当前功能
 
+已上线：[公开试玩预算、入口与 Bark 通知](archive/public-playtest.md)。
+
 实现完成，待环境验收：[渠道口令与统计](active/channel-analytics.md)。
 
 已完成：[手机御案前端](archive/mobile-desk.md)。

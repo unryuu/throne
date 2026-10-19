@@ -64,6 +64,7 @@ export type CourtReview = {
   calls: LiveCallTrace[];
 };
 type Entry = {
+  persisted: boolean;
   analytics?: RunTracking;
   id: string;
   locale: Locale;
@@ -186,10 +187,6 @@ export class CourtService {
       operationId?: string;
     } = {},
   ): Promise<CourtSnapshot> {
-    if (this.entries.size >= 50)
-      throw new Error(
-        "Local session limit reached; restart the development server",
-      );
     const preferences = courtSettingsSchema.parse(settings);
     const pack =
       options.pack ??
@@ -232,6 +229,7 @@ export class CourtService {
       },
     });
     const entry: Entry = {
+      persisted: false,
       ...(options.attribution
         ? { analytics: { ...options.attribution, callOffset: 0 } }
         : {}),
@@ -365,6 +363,7 @@ export class CourtService {
     });
     const phase = session.state.phase;
     const entry: Entry = {
+      persisted: true,
       ...(saved.analytics ? { analytics: saved.analytics } : {}),
       id,
       locale: saved.locale,
@@ -382,6 +381,7 @@ export class CourtService {
         : {}),
     };
     this.entries.set(id, entry);
+    this.trimMemory(entry);
     return entry;
   }
 
@@ -396,6 +396,7 @@ export class CourtService {
     operation: CourtOperation,
     onFailure?: () => void,
   ): Promise<CourtSnapshot> {
+    entry.persisted = false;
     entry.status = "running";
     delete entry.error;
     entry.pending = (async () => {
@@ -442,6 +443,19 @@ export class CourtService {
       operation,
       Math.floor(entry.session.view.time / 12),
     );
+    entry.persisted = true;
+    this.trimMemory(entry);
+  }
+
+  private trimMemory(entry: Entry) {
+    for (const [id, candidate] of this.entries) {
+      if (this.entries.size <= 50) break;
+      if (candidate === entry || candidate.pending || !candidate.persisted)
+        continue;
+      this.entries.delete(id);
+      for (const [key, busy] of this.progress)
+        if (busy === candidate.busy) this.progress.delete(key);
+    }
   }
 
   private snapshot(entry: Entry): CourtSnapshot {

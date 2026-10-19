@@ -11,6 +11,18 @@ import {
 import { join } from "node:path";
 import type { LiveCallTrace } from "./live-policy.ts";
 
+export type CallAdmission = (request: unknown) => Promise<{
+  finish(trace: LiveCallTrace | undefined): Promise<void>;
+}>;
+const admissions = new Map<string, CallAdmission>();
+/** Deployment policy runs only after a cache miss; it is not model input. */
+export function registerCallAdmission(root: string, admission: CallAdmission) {
+  if (admissions.has(root))
+    throw new Error("Call admission already registered");
+  admissions.set(root, admission);
+  return () => admissions.delete(root);
+}
+
 export const fingerprint = (request: unknown): string =>
   createHash("sha256").update(JSON.stringify(request)).digest("hex");
 export const zeroUsage = {
@@ -99,12 +111,18 @@ export async function cachedCall(options: {
     );
     const ready = await read();
     if (ready) return hit(ready);
-    options.onBusy?.(true);
+    const permit = await admissions.get(options.root)?.(options.request);
     let trace: LiveCallTrace | undefined;
-    const text = await options.run((t) => {
-      trace = { ...t, fingerprint: key, cached: false };
-      options.onTrace(trace);
-    });
+    let text: string;
+    try {
+      options.onBusy?.(true);
+      text = await options.run((t) => {
+        trace = { ...t, fingerprint: key, cached: false };
+        options.onTrace(trace);
+      });
+    } finally {
+      await permit?.finish(trace);
+    }
     options.validate?.(text);
     if (!trace || trace.status !== "succeeded")
       throw new Error(

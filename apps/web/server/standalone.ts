@@ -1,3 +1,6 @@
+import { registerCallAdmission } from "@throne/agent-runtime/live";
+import { ModelBudget } from "./model-budget.ts";
+import { PressureMonitor, readBark, barkSender } from "./pressure-monitor.ts";
 import { Analytics } from "./analytics.ts";
 import { readPasscodes } from "./passcodes.ts";
 import { createServer } from "node:http";
@@ -65,7 +68,13 @@ export function createStandaloneServer(options: {
       if (!identity) return;
       if (
         (req.headers.origin && req.headers.origin !== origin.origin) ||
-        req.headers["sec-fetch-site"] === "cross-site"
+        (req.headers["sec-fetch-site"] === "cross-site" &&
+          !(
+            ["GET", "HEAD"].includes(req.method ?? "") &&
+            req.headers["sec-fetch-mode"] === "navigate" &&
+            req.headers["sec-fetch-dest"] === "document" &&
+            !path.startsWith("/api/")
+          ))
       ) {
         res.writeHead(403).end("Cross-site requests are not allowed");
         return;
@@ -138,6 +147,26 @@ export async function startStandalone() {
     throw new Error("PORT must be 1–65535");
   runsDirectory(root);
   await readPasscodes(root);
+  const budget = new ModelBudget(
+    root,
+    Number(process.env.THRONE_DAILY_BUDGET_CNY ?? 50),
+    Number(process.env.THRONE_MODEL_CONCURRENCY ?? 3),
+  );
+  await budget.snapshot();
+  const unregister = registerCallAdmission(root, budget.admit);
+  let stopMonitor: (() => void) | undefined;
+  try {
+    stopMonitor = new PressureMonitor(
+      () => budget.pressure(),
+      barkSender(await readBark(root)),
+    ).start();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      unregister();
+      throw error;
+    }
+    console.warn("Bark not configured; pressure notifications disabled");
+  }
   const server = createStandaloneServer({
     root,
     ...(await readAuthSecrets(root)),
@@ -146,6 +175,10 @@ export async function startStandalone() {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);
+  });
+  server.once("close", () => {
+    stopMonitor?.();
+    unregister();
   });
   console.log(`Throne listening on http://127.0.0.1:${port}`);
   const stop = () => {

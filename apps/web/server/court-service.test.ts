@@ -1,3 +1,5 @@
+import { registerCallAdmission } from "@throne/agent-runtime/live";
+import { ModelBudget } from "./model-budget.ts";
 import { Analytics, analyticsPath, readAnalytics } from "./analytics.ts";
 import { usageTotals } from "./model-cost.ts";
 import { describe, expect, it } from "vitest";
@@ -243,4 +245,54 @@ it("does not attribute historical costs on GET and binds a legacy run only on it
     visitor: "v2",
     callOffset: history,
   });
+});
+
+it("opens more than fifty games and restores evicted saved sessions without replaying model calls", async () => {
+  const root = await mkdtemp(join(tmpdir(), "court-many-games-"));
+  let calls = 0;
+  const service = new CourtService(root, () => quietModel(() => calls++));
+  const first = await service.create("zh-CN");
+  for (let i = 0; i < 50; i++) await service.create("zh-CN");
+  expect(service.entries.size).toBeLessThanOrEqual(50);
+  expect(service.entries.has(first.id)).toBe(false);
+  const before = calls;
+  const restored = await service.get(first.id);
+  expect(restored.view).toEqual(first.view);
+  expect(calls).toBe(before);
+  expect(service.entries.size).toBeLessThanOrEqual(50);
+});
+
+it("persists a budget-paused opening and resumes it after Beijing midnight using its cached successful work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "court-budget-resume-"));
+  let time = Date.parse("2026-10-19T15:59:00Z"),
+    calls = 0;
+  const budget = new ModelBudget(root, 0.5, 3, () => time);
+  const unregister = registerCallAdmission(root, budget.admit);
+  const factory = () => quietModel(() => calls++);
+  try {
+    const service = new CourtService(root, factory, "budget-resume-test");
+    const paused = await service.create("zh-CN");
+    expect(paused.status).toBe("failed");
+    expect(paused.error).toContain("今日生成额度");
+    expect(calls).toBe(1);
+    const restarted = new CourtService(root, factory, "budget-resume-test");
+    expect((await restarted.get(paused.id)).status).toBe("failed");
+    time += 60000;
+    const resumed = await restarted.retry(paused.id);
+    expect(resumed.status).toBe("waiting");
+    expect(resumed.view.audience).toBeDefined();
+    expect(calls).toBe(2);
+    const saved = JSON.parse(
+      await readFile(join(root, "runs/court", paused.id + ".json"), "utf8"),
+    );
+    expect(
+      saved.records.filter(
+        (r: { kind: string; event: { eventType: string } }) =>
+          r.kind === "committed" &&
+          r.event.eventType === "information.bureau_composed",
+      ),
+    ).toHaveLength(1);
+  } finally {
+    unregister();
+  }
 });

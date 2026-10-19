@@ -1,7 +1,13 @@
 export { runsDirectory } from "./runtime-paths.ts";
 import { runsDirectory } from "./runtime-paths.ts";
 import { cachedCall, textRequestIdentity } from "./call-cache.ts";
-export { cachedCall, fingerprint, textRequestIdentity } from "./call-cache.ts";
+export {
+  cachedCall,
+  fingerprint,
+  textRequestIdentity,
+  registerCallAdmission,
+} from "./call-cache.ts";
+export type { CallAdmission } from "./call-cache.ts";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
